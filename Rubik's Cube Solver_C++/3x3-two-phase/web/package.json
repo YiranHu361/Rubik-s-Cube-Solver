@@ -1,0 +1,10 @@
+{
+  "name": "cube3-web",
+  "private": true,
+  "type": "module",
+  "description": "Browser app for the 3x3 two-phase solver: two corner photos in, animated solution out.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "bundle": "node bundle.mjs"
+  }
+}
