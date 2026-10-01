@@ -176,9 +176,18 @@ export function cubePolygons(facelets, camera, turning = null, palette = STICKER
             const ax = FACE_AXES[face];
             const centre = add(cubie, scale(ax.n, h));
             const u = scale(ax.col, h), v = scale(ax.row, h);
-            const box = [sub(sub(centre, u), v), add(sub(centre, u), v), add(add(centre, u), v), sub(add(centre, u), v)].map(transform);
-            //Hide faces that point into the cube (unless the layer is mid-turn, then the gap shows).
+            //Only the outside of the cube is drawn, plus the two faces of the
+            //cut while a layer is turning. Faces buried inside the cube would
+            //only confuse the depth sort.
             const outward = dot(ax.n, cubie) > 0.5;
+            let onCut = false;
+            if(turning){
+                const towards = ax.n[turning.axisIndex];//-1, 0 or +1 along the turning axis
+                const pos = cubie[turning.axisIndex];
+                onCut = (pos === turning.layer && towards === -turning.layer) || (pos === 0 && towards === turning.layer);
+            }
+            if(!outward && !onCut) continue;
+            const box = [sub(sub(centre, u), v), add(sub(centre, u), v), add(add(centre, u), v), sub(add(centre, u), v)].map(transform);
             const worldNormal = transform(add(centre, ax.n)).map((c, i) => c - transform(centre)[i]);
             const viewDot = dot(worldNormal, sub(camera.position, transform(centre)));
             if(viewDot <= 0) continue;
