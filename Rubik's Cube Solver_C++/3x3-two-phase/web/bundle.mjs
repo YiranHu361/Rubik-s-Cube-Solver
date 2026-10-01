@@ -38,3 +38,10 @@ html = html.replace('<script type="module" src="app.js"></script>',
 mkdirSync(join(here, "dist"), {recursive: true});
 writeFileSync(join(here, "dist", "index.html"), html);
 console.log(`dist/index.html written (${(html.length / 1024).toFixed(0)} KB)`);
+
+//dist/artifact.html: the same page without the document skeleton, for hosts
+//that wrap the content in their own <html>/<head>/<body> (claude.ai Artifacts).
+const head = html.match(/<head>([\s\S]*?)<\/head>/)[1].replace(/<meta[^>]*>\s*/g, "");
+const body = html.match(/<body>([\s\S]*?)<\/body>/)[1];
+writeFileSync(join(here, "dist", "artifact.html"), head.trim() + "\n" + body.trim() + "\n");
+console.log("dist/artifact.html written");

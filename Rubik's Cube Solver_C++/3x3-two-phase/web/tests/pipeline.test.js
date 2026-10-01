@@ -132,6 +132,7 @@ test("keypoints are found automatically on synthetic photos", () => {
         const result = reconstruct(sampleFaces(p1.image, k1), sampleFaces(p2.image, k2));
         if(sameCubeUpToRotation(facelets, result.facelets)) recovered++;
     }
+    console.log(`  automatic keypoints recovered ${recovered}/${total} cubes`);
     assert.ok(recovered >= total * 0.9, `only ${recovered}/${total} recovered with automatic keypoints`);
 });
 
