@@ -293,7 +293,7 @@ function useSamplePhotos(seed){
 
 const cameraSessions = [null, null];
 const LIVE_SAMPLE_SIZE = 240;//pixels of the square frame used for live sampling
-const PILL_DEFAULT = ["Point one corner at the camera", "Flip to the diagonally opposite corner"];
+const PILL_DEFAULT = ["One corner towards the camera", "Flip to the opposite corner"];
 
 function setPill(index, text, kind){
     const pill = $(`photo-status-${index}`);
@@ -500,8 +500,8 @@ function updateStepper(){
     const valid = state.facelets ? CubieCube.fromFacelets(state.facelets).verify() === "" : false;
     const solved = Boolean(state.solution);
     setStep(1, photos === 2 ? "done" : "current", photos === 2 ? "2 of 2 read" : `${photos} of 2`);
-    setStep(2, photos < 2 ? "" : (valid ? "done" : "current"), photos < 2 ? "Waiting for photos" : (valid ? "Valid cube" : "Fix the stickers"));
-    setStep(3, solved ? "done" : (valid ? "current" : ""), solved ? `${state.solution.length} moves` : (valid ? "Ready to solve" : "Needs a valid cube"));
+    setStep(2, photos < 2 ? "" : (valid ? "done" : "current"), photos < 2 ? "Waiting" : (valid ? "Valid cube" : "Fix stickers"));
+    setStep(3, solved ? "done" : (valid ? "current" : ""), solved ? `${state.solution.length} moves` : (valid ? "Ready" : "Not yet"));
 }
 
 function setStep(n, cls, text){
