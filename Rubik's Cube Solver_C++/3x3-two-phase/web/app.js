@@ -184,6 +184,7 @@ function drawPhoto(index){
     };
     kp.ring.forEach((p, i) => drawPoint(p, i % 2 === 0 ? "edge" : "far"));
     drawPoint(kp.centre, "centre");
+    updatePhotoStatus(index);
 }
 
 //Dragging the keypoints with the pointer.
@@ -273,12 +274,54 @@ function useSamplePhotos(seed){
     setPhoto(1, chosen.p2.image, true);
 }
 
+//---- progress stepper and photo status -------------------------------------
+
+//The sticky stepper shows what each step is waiting for.
+function updateStepper(){
+    const photos = state.photos.filter(Boolean).length;
+    const valid = state.facelets ? CubieCube.fromFacelets(state.facelets).verify() === "" : false;
+    const solved = Boolean(state.solution);
+    setStep(1, photos === 2 ? "done" : "current", photos === 2 ? "2 of 2 read" : `${photos} of 2`);
+    setStep(2, photos < 2 ? "" : (valid ? "done" : "current"), photos < 2 ? "Waiting for photos" : (valid ? "Valid cube" : "Fix the stickers"));
+    setStep(3, solved ? "done" : (valid ? "current" : ""), solved ? `${state.solution.length} moves` : (valid ? "Ready to solve" : "Needs a valid cube"));
+}
+
+function setStep(n, cls, text){
+    $(`stepper-${n}`).className = cls;
+    $(`stepper-state-${n}`).textContent = text;
+}
+
+//Pill over the photo: how wide the cube sits in the frame, from the hexagon
+//the seven points describe. Between a third and nine tenths of the width
+//reads well; smaller and the stickers are only a few pixels each.
+function updatePhotoStatus(index){
+    const photo = state.photos[index];
+    if(!photo) return;
+    const pill = $(`photo-status-${index}`);
+    const kp = normalizeRing(photo.keypoints);
+    const xs = kp.ring.map(p => p[0]), ys = kp.ring.map(p => p[1]);
+    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    const fraction = span / Math.max(photo.image.width, photo.image.height);
+    const pct = Math.round(fraction * 100);
+    if(fraction < 0.33){
+        pill.textContent = `Cube spans ${pct}% of the frame: move closer`;
+        pill.className = "frame-pill warn";
+    }else if(fraction > 0.92){
+        pill.textContent = `Cube spans ${pct}% of the frame: step back so every corner shows`;
+        pill.className = "frame-pill warn";
+    }else{
+        pill.textContent = `Cube spans ${pct}% of the frame` + (photo.samples ? " \u00b7 27 stickers read" : "");
+        pill.className = "frame-pill good";
+    }
+}
+
 //---- reconstruction and the net --------------------------------------------
 
 function rebuildFromPhotos(){
     const [a, b] = state.photos;
     if(!a || !b){
         setMessage(a || b ? "Add the second photo to read the cube." : "Add two photos, or use the sample photos.", "info");
+        updateStepper();
         return;
     }
     try{
@@ -306,6 +349,7 @@ function rebuildFromPhotos(){
     clearSolution();
     cubeView.setPalette(currentPalette());
     cubeView.setFacelets(state.facelets);
+    updateStepper();
 }
 
 function highlightSwapped(result){
@@ -389,6 +433,7 @@ function paintSticker(idx){
     setMessage(problem === "" ? "Valid cube." : "Not a valid cube yet: " + problem + ".", problem === "" ? "good" : "bad");
     clearSolution();
     cubeView.setFacelets(state.facelets);
+    updateStepper();
 }
 
 function setMessage(text, kind){
@@ -442,6 +487,7 @@ async function solve(){
 
 function showSolution(){
     $("solution").hidden = false;
+    updateStepper();
     $("move-count").textContent = String(state.solution.length);
     renderMoveStrip();
     cubeView.setFacelets(state.solveStart);
@@ -460,8 +506,36 @@ function renderMoveStrip(){
         chip.addEventListener("click", () => jumpTo(i));
         strip.appendChild(chip);
     });
-    $("progress").textContent = `${player.index} / ${state.solution.length}`;
-    $("play-button").textContent = player.playing ? "Pause" : (player.index >= state.solution.length ? "Replay" : "Play");
+    const n = state.solution.length;
+    const segments = $("segments");
+    segments.innerHTML = "";
+    for(let i = 0; i < n; i++){
+        const s = document.createElement("i");
+        if(i < player.index) s.className = "done";
+        else if(i === player.index) s.className = "current";
+        segments.appendChild(s);
+    }
+    $("move-index").textContent = String(Math.min(player.index + 1, n));
+    $("progress").textContent = player.index >= n ? "all done" : `${player.index} done`;
+    if(player.index < n){
+        const m = state.solution[player.index];
+        $("current-move").textContent = Moves.name(m);
+        $("current-move-desc").textContent = describeMove(m);
+    }else{
+        $("current-move").textContent = "Solved";
+        $("current-move-desc").textContent = "Every move has been played. Start over to watch it again.";
+    }
+    $("play-button").textContent = player.playing ? "Pause" : "Auto-play";
+    $("step-forward").disabled = player.index >= n;
+    $("step-back").disabled = player.index <= 0;
+}
+
+//"R'" -> "Right face, anticlockwise". Directions are as seen looking at that face.
+const FACE_WORDS = {U: "Top face", R: "Right face", F: "Front face", D: "Bottom face", L: "Left face", B: "Back face"};
+function describeMove(move){
+    const face = FACE_NAMES[Math.floor(move / 3)];
+    const turn = ["clockwise, a quarter turn", "a half turn", "anticlockwise, a quarter turn"][move % 3];
+    return `${FACE_WORDS[face]} (${face}), ${turn}`;
 }
 
 function faceletsAfter(count){
@@ -514,11 +588,13 @@ function init(){
     for(const i of [0, 1]){
         $(`photo-hint-${i}`).textContent = PHOTO_HINTS[i];
         installDragging(i);
-        $(`photo-file-${i}`).addEventListener("change", e => {
-            const file = e.target.files && e.target.files[0];
-            if(file) loadPhotoFile(i, file);
-            e.target.value = "";
-        });
+        for(const id of [`photo-file-${i}`, `photo-camera-${i}`]){
+            $(id).addEventListener("change", e => {
+                const file = e.target.files && e.target.files[0];
+                if(file) loadPhotoFile(i, file);
+                e.target.value = "";
+            });
+        }
         $(`photo-reset-${i}`).addEventListener("click", () => {
             const photo = state.photos[i];
             if(!photo) return;
