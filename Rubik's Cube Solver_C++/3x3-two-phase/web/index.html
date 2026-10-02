@@ -59,6 +59,7 @@ button.linkish{border:0; background:none; padding:4px 2px; font-weight:500; colo
 button.linkish:hover{color:var(--accent)}
 .filebutton input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
 .filebutton{position:relative; display:inline-block}
+.visually-hidden{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none}
 
 /*Progress stepper: which step is done, which is in progress, with a one-line state each.*/
 .stepper{position:sticky; top:env(safe-area-inset-top, 0px); z-index:5; background:var(--bg); display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding-block:12px 10px; border-bottom:1.5px solid var(--line)}
@@ -86,9 +87,16 @@ button.linkish:hover{color:var(--accent)}
 .photo-card header{padding:0; gap:4px; display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap}
 .photo-card h3{margin:0; font-family:var(--mono); font-weight:600; font-size:0.95rem}
 .badge{font-family:var(--mono); font-size:0.75rem; color:var(--muted); letter-spacing:0.04em; text-transform:uppercase}
+/*The frame is square. The live preview is centre-cropped to that square and
+  the captured photo is the same square, so the guide drawn over the
+  preview lands on the same pixels in the photo.*/
 .photo-frame{position:relative; background:var(--plate); aspect-ratio:1; max-width:100%; overflow:hidden; border-radius:6px}
-.photo-frame canvas{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
-.photo-card:not(.has-photo) canvas{display:none}
+.photo-frame canvas.photo{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
+.photo-card:not(.has-photo) canvas.photo{display:none}
+.photo-frame video.live{display:none; width:100%; height:100%; object-fit:cover; background:#000}
+.guide-canvas{display:none; position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+.photo-card.capturing video.live, .photo-card.capturing .guide-canvas{display:block}
+.photo-card.capturing canvas.photo, .photo-card.capturing .guide, .photo-card.capturing .brackets{display:none}
 /*Capture guide shown before a photo exists: corner brackets, a ghost of the
   cube silhouette with its seven points, and an instruction pill.*/
 .guide{position:absolute; inset:0; display:grid; place-items:center; color:#C9CFD8; text-align:center; padding:28px; font-size:0.9rem}
@@ -101,10 +109,19 @@ button.linkish:hover{color:var(--accent)}
 .brackets i:nth-child(3){left:0; bottom:0; border-right:0; border-top:0}
 .brackets i:nth-child(4){right:0; bottom:0; border-left:0; border-top:0}
 .photo-card.has-photo .brackets{display:none}
-.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none}
+.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none; z-index:2}
 .frame-pill.good{background:rgba(21,122,76,0.92)}
 .frame-pill.warn{background:rgba(184,110,0,0.94)}
 .frame-pill[hidden]{display:none}
+/*Shutter bar over the live preview.*/
+.shutter-bar{display:none; position:absolute; left:0; right:0; bottom:0; padding:12px 14px 12px; justify-content:space-between; align-items:center; gap:10px; background:linear-gradient(transparent, rgba(0,0,0,0.65)); z-index:2}
+.photo-card.capturing .shutter-bar{display:flex}
+.shutter{width:58px; height:58px; border-radius:50%; background:#fff; border:4px solid rgba(0,0,0,0.35); box-shadow:0 0 0 3px #fff; padding:0; flex:none}
+.shutter:hover{background:var(--accent); border-color:rgba(0,0,0,0.35)}
+.shutter:focus-visible{outline:3px solid var(--accent); outline-offset:4px}
+button.linkish.light{color:#fff; text-decoration:none; font-weight:600; background:rgba(0,0,0,0.5); padding:6px 11px; border-radius:999px; font-size:0.85rem}
+button.linkish.light:hover{color:#fff; background:var(--accent)}
+.shutter-bar .spacer{width:92px; flex:none}
 .tip{display:flex; gap:10px; align-items:flex-start; background:var(--bg); border:1.5px solid var(--line); padding:9px 12px; font-size:0.86rem; color:var(--muted); border-radius:6px; margin:0}
 .tip b{color:var(--ink); font-weight:600}
 .tip svg{flex:none; width:18px; height:18px; margin-top:2px}
@@ -196,26 +213,35 @@ footer a{color:var(--accent)}
     <div class="step-head">
         <div class="step-num">STEP 1 OF 3</div>
         <h2>Photograph both corners</h2>
-        <p>Drag the seven points onto the cube's corners if the guess is off: the ring goes on the corner nearest the camera, the dots on the six outer corners.</p>
+        <p>Take photo opens your camera with a cube outline to line up. The seven points can be dragged afterwards if the picture is a little off: the ring sits on the corner nearest the camera, the dots on the six outer corners.</p>
     </div>
     <div class="step-body">
         <div class="photos">
             <div class="photo-card" id="photo-card-0">
                 <header><h3>Photo 1 · top corner</h3><span class="badge" id="photo-badge-0">empty</span></header>
                 <div class="photo-frame">
-                    <canvas id="photo-canvas-0" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <canvas id="photo-canvas-0" class="photo" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <video id="photo-video-0" class="live" playsinline muted autoplay aria-label="Live camera preview for photo 1"></video>
+                    <canvas id="photo-guide-0" class="guide-canvas" aria-hidden="true"></canvas>
                     <div class="brackets"><i></i><i></i><i></i><i></i></div>
                     <div class="guide"><div>
-                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 64 L98 42 M60 64 L22 42 M60 64 L60 106"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g><g fill="#ffd23f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g></svg>
                         <div>Top face plus the two faces below it, filling about two thirds of the frame</div>
                     </div></div>
                     <div class="frame-pill" id="photo-status-0">Point one corner at the camera</div>
+                    <div class="shutter-bar">
+                        <button type="button" class="linkish light" id="photo-cancel-0">Cancel</button>
+                        <button type="button" class="shutter" id="photo-capture-0" aria-label="Capture photo 1"></button>
+                        <button type="button" class="linkish light" id="photo-switch-0" hidden>Switch camera</button>
+                        <span class="spacer" id="photo-spacer-0"></span>
+                    </div>
                 </div>
                 <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2V16h6v-.5c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg><span><b>Even light, no glare.</b> Daylight from the side works best; a lamp straight above washes out the top face.</span></p>
                 <p class="photo-hint" id="photo-hint-0" hidden></p>
                 <div class="photo-actions">
-                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-0" accept="image/*" capture="environment"></label>
+                    <button type="button" class="primary" id="photo-take-0">Take photo</button>
                     <label class="filebutton">Choose from library<input type="file" id="photo-file-0" accept="image/*"></label>
+                    <input type="file" id="photo-camera-0" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
                 </div>
                 <div class="photo-more">
                     <button type="button" class="linkish" id="photo-reset-0">Guess the points again</button>
@@ -225,19 +251,28 @@ footer a{color:var(--accent)}
             <div class="photo-card" id="photo-card-1">
                 <header><h3>Photo 2 · opposite corner</h3><span class="badge" id="photo-badge-1">empty</span></header>
                 <div class="photo-frame">
-                    <canvas id="photo-canvas-1" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <canvas id="photo-canvas-1" class="photo" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <video id="photo-video-1" class="live" playsinline muted autoplay aria-label="Live camera preview for photo 2"></video>
+                    <canvas id="photo-guide-1" class="guide-canvas" aria-hidden="true"></canvas>
                     <div class="brackets"><i></i><i></i><i></i><i></i></div>
                     <div class="guide"><div>
-                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 64 L98 42 M60 64 L22 42 M60 64 L60 106"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g><g fill="#ffd23f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g></svg>
                         <div>The three faces you could not see in photo 1. Any way round is fine.</div>
                     </div></div>
                     <div class="frame-pill" id="photo-status-1">Flip to the diagonally opposite corner</div>
+                    <div class="shutter-bar">
+                        <button type="button" class="linkish light" id="photo-cancel-1">Cancel</button>
+                        <button type="button" class="shutter" id="photo-capture-1" aria-label="Capture photo 2"></button>
+                        <button type="button" class="linkish light" id="photo-switch-1" hidden>Switch camera</button>
+                        <span class="spacer" id="photo-spacer-1"></span>
+                    </div>
                 </div>
                 <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16v16H4z M4 12h16 M12 4v16"/></svg><span><b>Keep the whole cube in frame.</b> All six outer corners must be visible; the near corner should sit near the middle.</span></p>
                 <p class="photo-hint" id="photo-hint-1" hidden></p>
                 <div class="photo-actions">
-                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-1" accept="image/*" capture="environment"></label>
+                    <button type="button" class="primary" id="photo-take-1">Take photo</button>
                     <label class="filebutton">Choose from library<input type="file" id="photo-file-1" accept="image/*"></label>
+                    <input type="file" id="photo-camera-1" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
                 </div>
                 <div class="photo-more">
                     <button type="button" class="linkish" id="photo-reset-1">Guess the points again</button>

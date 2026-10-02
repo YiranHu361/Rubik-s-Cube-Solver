@@ -54,6 +54,7 @@ button.linkish{border:0; background:none; padding:4px 2px; font-weight:500; colo
 button.linkish:hover{color:var(--accent)}
 .filebutton input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
 .filebutton{position:relative; display:inline-block}
+.visually-hidden{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; pointer-events:none}
 
 /*Progress stepper: which step is done, which is in progress, with a one-line state each.*/
 .stepper{position:sticky; top:env(safe-area-inset-top, 0px); z-index:5; background:var(--bg); display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding-block:12px 10px; border-bottom:1.5px solid var(--line)}
@@ -81,9 +82,16 @@ button.linkish:hover{color:var(--accent)}
 .photo-card header{padding:0; gap:4px; display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap}
 .photo-card h3{margin:0; font-family:var(--mono); font-weight:600; font-size:0.95rem}
 .badge{font-family:var(--mono); font-size:0.75rem; color:var(--muted); letter-spacing:0.04em; text-transform:uppercase}
+/*The frame is square. The live preview is centre-cropped to that square and
+  the captured photo is the same square, so the guide drawn over the
+  preview lands on the same pixels in the photo.*/
 .photo-frame{position:relative; background:var(--plate); aspect-ratio:1; max-width:100%; overflow:hidden; border-radius:6px}
-.photo-frame canvas{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
-.photo-card:not(.has-photo) canvas{display:none}
+.photo-frame canvas.photo{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
+.photo-card:not(.has-photo) canvas.photo{display:none}
+.photo-frame video.live{display:none; width:100%; height:100%; object-fit:cover; background:#000}
+.guide-canvas{display:none; position:absolute; inset:0; width:100%; height:100%; pointer-events:none}
+.photo-card.capturing video.live, .photo-card.capturing .guide-canvas{display:block}
+.photo-card.capturing canvas.photo, .photo-card.capturing .guide, .photo-card.capturing .brackets{display:none}
 /*Capture guide shown before a photo exists: corner brackets, a ghost of the
   cube silhouette with its seven points, and an instruction pill.*/
 .guide{position:absolute; inset:0; display:grid; place-items:center; color:#C9CFD8; text-align:center; padding:28px; font-size:0.9rem}
@@ -96,10 +104,19 @@ button.linkish:hover{color:var(--accent)}
 .brackets i:nth-child(3){left:0; bottom:0; border-right:0; border-top:0}
 .brackets i:nth-child(4){right:0; bottom:0; border-left:0; border-top:0}
 .photo-card.has-photo .brackets{display:none}
-.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none}
+.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none; z-index:2}
 .frame-pill.good{background:rgba(21,122,76,0.92)}
 .frame-pill.warn{background:rgba(184,110,0,0.94)}
 .frame-pill[hidden]{display:none}
+/*Shutter bar over the live preview.*/
+.shutter-bar{display:none; position:absolute; left:0; right:0; bottom:0; padding:12px 14px 12px; justify-content:space-between; align-items:center; gap:10px; background:linear-gradient(transparent, rgba(0,0,0,0.65)); z-index:2}
+.photo-card.capturing .shutter-bar{display:flex}
+.shutter{width:58px; height:58px; border-radius:50%; background:#fff; border:4px solid rgba(0,0,0,0.35); box-shadow:0 0 0 3px #fff; padding:0; flex:none}
+.shutter:hover{background:var(--accent); border-color:rgba(0,0,0,0.35)}
+.shutter:focus-visible{outline:3px solid var(--accent); outline-offset:4px}
+button.linkish.light{color:#fff; text-decoration:none; font-weight:600; background:rgba(0,0,0,0.5); padding:6px 11px; border-radius:999px; font-size:0.85rem}
+button.linkish.light:hover{color:#fff; background:var(--accent)}
+.shutter-bar .spacer{width:92px; flex:none}
 .tip{display:flex; gap:10px; align-items:flex-start; background:var(--bg); border:1.5px solid var(--line); padding:9px 12px; font-size:0.86rem; color:var(--muted); border-radius:6px; margin:0}
 .tip b{color:var(--ink); font-weight:600}
 .tip svg{flex:none; width:18px; height:18px; margin-top:2px}
@@ -189,26 +206,35 @@ footer a{color:var(--accent)}
     <div class="step-head">
         <div class="step-num">STEP 1 OF 3</div>
         <h2>Photograph both corners</h2>
-        <p>Drag the seven points onto the cube's corners if the guess is off: the ring goes on the corner nearest the camera, the dots on the six outer corners.</p>
+        <p>Take photo opens your camera with a cube outline to line up. The seven points can be dragged afterwards if the picture is a little off: the ring sits on the corner nearest the camera, the dots on the six outer corners.</p>
     </div>
     <div class="step-body">
         <div class="photos">
             <div class="photo-card" id="photo-card-0">
                 <header><h3>Photo 1 · top corner</h3><span class="badge" id="photo-badge-0">empty</span></header>
                 <div class="photo-frame">
-                    <canvas id="photo-canvas-0" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <canvas id="photo-canvas-0" class="photo" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <video id="photo-video-0" class="live" playsinline muted autoplay aria-label="Live camera preview for photo 1"></video>
+                    <canvas id="photo-guide-0" class="guide-canvas" aria-hidden="true"></canvas>
                     <div class="brackets"><i></i><i></i><i></i><i></i></div>
                     <div class="guide"><div>
-                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 64 L98 42 M60 64 L22 42 M60 64 L60 106"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g><g fill="#ffd23f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g></svg>
                         <div>Top face plus the two faces below it, filling about two thirds of the frame</div>
                     </div></div>
                     <div class="frame-pill" id="photo-status-0">Point one corner at the camera</div>
+                    <div class="shutter-bar">
+                        <button type="button" class="linkish light" id="photo-cancel-0">Cancel</button>
+                        <button type="button" class="shutter" id="photo-capture-0" aria-label="Capture photo 1"></button>
+                        <button type="button" class="linkish light" id="photo-switch-0" hidden>Switch camera</button>
+                        <span class="spacer" id="photo-spacer-0"></span>
+                    </div>
                 </div>
                 <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2V16h6v-.5c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg><span><b>Even light, no glare.</b> Daylight from the side works best; a lamp straight above washes out the top face.</span></p>
                 <p class="photo-hint" id="photo-hint-0" hidden></p>
                 <div class="photo-actions">
-                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-0" accept="image/*" capture="environment"></label>
+                    <button type="button" class="primary" id="photo-take-0">Take photo</button>
                     <label class="filebutton">Choose from library<input type="file" id="photo-file-0" accept="image/*"></label>
+                    <input type="file" id="photo-camera-0" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
                 </div>
                 <div class="photo-more">
                     <button type="button" class="linkish" id="photo-reset-0">Guess the points again</button>
@@ -218,19 +244,28 @@ footer a{color:var(--accent)}
             <div class="photo-card" id="photo-card-1">
                 <header><h3>Photo 2 · opposite corner</h3><span class="badge" id="photo-badge-1">empty</span></header>
                 <div class="photo-frame">
-                    <canvas id="photo-canvas-1" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <canvas id="photo-canvas-1" class="photo" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <video id="photo-video-1" class="live" playsinline muted autoplay aria-label="Live camera preview for photo 2"></video>
+                    <canvas id="photo-guide-1" class="guide-canvas" aria-hidden="true"></canvas>
                     <div class="brackets"><i></i><i></i><i></i><i></i></div>
                     <div class="guide"><div>
-                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 64 L98 42 M60 64 L22 42 M60 64 L60 106"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g><g fill="#ffd23f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g></svg>
                         <div>The three faces you could not see in photo 1. Any way round is fine.</div>
                     </div></div>
                     <div class="frame-pill" id="photo-status-1">Flip to the diagonally opposite corner</div>
+                    <div class="shutter-bar">
+                        <button type="button" class="linkish light" id="photo-cancel-1">Cancel</button>
+                        <button type="button" class="shutter" id="photo-capture-1" aria-label="Capture photo 2"></button>
+                        <button type="button" class="linkish light" id="photo-switch-1" hidden>Switch camera</button>
+                        <span class="spacer" id="photo-spacer-1"></span>
+                    </div>
                 </div>
                 <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16v16H4z M4 12h16 M12 4v16"/></svg><span><b>Keep the whole cube in frame.</b> All six outer corners must be visible; the near corner should sit near the middle.</span></p>
                 <p class="photo-hint" id="photo-hint-1" hidden></p>
                 <div class="photo-actions">
-                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-1" accept="image/*" capture="environment"></label>
+                    <button type="button" class="primary" id="photo-take-1">Take photo</button>
                     <label class="filebutton">Choose from library<input type="file" id="photo-file-1" accept="image/*"></label>
+                    <input type="file" id="photo-camera-1" class="visually-hidden" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
                 </div>
                 <div class="photo-more">
                     <button type="button" class="linkish" id="photo-reset-1">Guess the points again</button>
@@ -2022,6 +2057,20 @@ function randomCornerCamera(signs, rng, {width, height, roll = null, spread = 0.
     return cameraFromDirection(direction, dist, r, f, width, height);
 }
 
+//A camera that shows the cube exactly as the capture guide draws it: looking
+//straight along the corner diagonal from far away, framed so the six outer
+//vertices land on guideKeypoints(size). With roll 0 the U face is on top for
+//the URF corner; roll PI gives the same "Y" layout for the DBL corner.
+function guideAlignedCamera(size, signs, roll = 0){
+    //Far away, so the picture is nearly orthographic: the edge vertices are
+    //0.87 units nearer than the far vertices, which would otherwise make
+    //them project a few pixels further out than a regular hexagon.
+    const distance = 200;
+    //The six outer vertices sit sqrt(6) from the viewing axis.
+    const focal = 0.36 * size * distance / Math.sqrt(6);
+    return cameraFromDirection(signs, distance, roll, focal, size, size);
+}
+
 //Renders one corner photo and also returns the exact keypoints, which the
 //tests use to separate colour problems from keypoint-detection problems.
 function renderCornerPhoto(facelets, signs, rng, options = {}){
@@ -2103,7 +2152,7 @@ function turningLayer(move, fraction){
 }
 
 
-return {STICKER_RGB, createImage, fillConvex, convexHull, renderCube, randomCornerCamera, renderCornerPhoto, cubePolygons, turningLayer, FACE_NAMES};
+return {STICKER_RGB, createImage, fillConvex, convexHull, renderCube, randomCornerCamera, guideAlignedCamera, renderCornerPhoto, cubePolygons, turningLayer, FACE_NAMES};
 })();
 
 const __m_vision = (() => {
@@ -2416,14 +2465,24 @@ function autoDetectKeypoints(image){
     return hexagonToKeypoints(hex, image);
 }
 
-function defaultKeypoints(width, height){
-    const cx = width / 2, cy = height / 2, r = Math.min(width, height) * 0.36;
+//The seven points of a cube seen straight along a corner: a regular hexagon
+//with the near corner at its centre. The three cube edges that meet at the
+//near corner run to the upper-left, upper-right and bottom vertices (the
+//"Y" of a cube drawn in isometric view), so those are the edge vertices
+//ring[0], ring[2], ring[4]. The ring starts at the upper-right vertex and
+//goes clockwise. The live camera guide draws exactly this, and a photo
+//taken on the guide uses these points directly.
+function guideKeypoints(size, cx = size / 2, cy = size / 2, radius = size * 0.36){
     const ring = [];
     for(let i = 0; i < 6; i++){
-        const a = -Math.PI / 2 + i * Math.PI / 3;
-        ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+        const a = -Math.PI / 6 + i * Math.PI / 3;
+        ring.push([cx + radius * Math.cos(a), cy + radius * Math.sin(a)]);
     }
     return {centre: [cx, cy], ring};
+}
+
+function defaultKeypoints(width, height){
+    return guideKeypoints(Math.min(width, height), width / 2, height / 2);
 }
 
 //Reduces a convex polygon to the 6 of its vertices that enclose the largest
@@ -2543,7 +2602,7 @@ function segmentBrightness(image, a, b){
     return sum / n;
 }
 
-return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
+return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, guideKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
 })();
 
 const __m_cube3d = (() => {
@@ -2667,9 +2726,9 @@ return {CubeView};
 const __m_app = (() => {
 //Page logic: photos in, keypoints, sticker net, solve, playback.
 const {CubieCube, Random, Facelets, Moves, FACE_NAMES, Solver} = __m_solver;
-const {faceQuads, normalizeRing, topFaceOrder, applyHomography} = __m_geometry;
+const {faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, QUAD_GRID} = __m_geometry;
 const {renderCornerPhoto, STICKER_RGB} = __m_render;
-const {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, PHOTO1_FACES, sampleFaceletIndex} = __m_vision;
+const {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, guideKeypoints, PHOTO1_FACES, sampleFaceletIndex} = __m_vision;
 const {CubeView} = __m_cube3d;
 const $ = id => document.getElementById(id);
 
@@ -2761,11 +2820,16 @@ const PHOTO_HINTS = [
     "Flip the cube to the corner diagonally opposite and photograph its three faces. Any way round is fine."
 ];
 
-function setPhoto(index, image, sample){
-    const photo = {image, keypoints: autoDetectKeypoints(image), canvas: $(`photo-canvas-${index}`), samples: null, sample};
+//source is "sample", "camera" or "library". A photo taken on the live guide
+//brings its own keypoints; any other photo gets the automatic guess.
+function setPhoto(index, image, source, keypoints = null){
+    const photo = {
+        image, keypoints: keypoints || autoDetectKeypoints(image), canvas: $(`photo-canvas-${index}`),
+        samples: null, sample: source === "sample", source
+    };
     state.photos[index] = photo;
     $(`photo-card-${index}`).classList.add("has-photo");
-    $(`photo-badge-${index}`).textContent = sample ? "synthetic sample" : "your photo";
+    $(`photo-badge-${index}`).textContent = {sample: "synthetic sample", camera: "from your camera", library: "from your library"}[source];
     drawPhoto(index);
     rebuildFromPhotos();
 }
@@ -2910,7 +2974,7 @@ function loadPhotoFile(index, file){
         ctx.drawImage(img, 0, 0, w, h);
         const data = ctx.getImageData(0, 0, w, h);
         URL.revokeObjectURL(url);
-        setPhoto(index, {width: w, height: h, data: data.data}, false);
+        setPhoto(index, {width: w, height: h, data: data.data}, "library");
     };
     img.onerror = () => { URL.revokeObjectURL(url); setMessage("That file could not be read as an image.", "bad"); };
     img.src = url;
@@ -2936,8 +3000,218 @@ function useSamplePhotos(seed){
         }catch(err){ ok = false; }
         if(ok || attempt === 7) chosen = {p1, p2};
     }
-    setPhoto(0, chosen.p1.image, true);
-    setPhoto(1, chosen.p2.image, true);
+    setPhoto(0, chosen.p1.image, "sample");
+    setPhoto(1, chosen.p2.image, "sample");
+}
+
+//---- live camera -----------------------------------------------------------
+//
+//"Take photo" opens the device camera in the photo frame with a guide drawn
+//over it: the hexagon outline of a cube seen from a corner, the three edges
+//meeting at the near corner, the sticker grid and the seven points. The
+//preview is centre-cropped to the square frame and the captured photo is the
+//same square, so the guide positions are the keypoints of the photo. While
+//the preview runs, the stickers under the guide are sampled a few times a
+//second and shown as colour discs.
+
+const cameraSessions = [null, null];
+const LIVE_SAMPLE_SIZE = 240;//pixels of the square frame used for live sampling
+const PILL_DEFAULT = ["Point one corner at the camera", "Flip to the diagonally opposite corner"];
+
+function setPill(index, text, kind){
+    const pill = $(`photo-status-${index}`);
+    pill.textContent = text;
+    pill.className = "frame-pill" + (kind ? " " + kind : "");
+}
+
+function cameraSupported(){
+    return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
+}
+
+async function startCamera(index, facing){
+    const card = $(`photo-card-${index}`);
+    const fallback = $(`photo-camera-${index}`);
+    if(!cameraSupported()){
+        //No in-page camera here (plain http, or a sandboxed page): the
+        //browser's own picker still offers the camera on phones.
+        fallback.click();
+        return;
+    }
+    stopCamera(index, false);
+    const session = {stream: null, video: $(`photo-video-${index}`), facing: facing || "environment", samples: null, lastSample: 0, raf: 0};
+    cameraSessions[index] = session;
+    card.classList.add("capturing");
+    setPill(index, "Starting the camera...", "");
+    try{
+        session.stream = await navigator.mediaDevices.getUserMedia({
+            video: {facingMode: {ideal: session.facing}, width: {ideal: 1280}, height: {ideal: 1280}},
+            audio: false
+        });
+    }catch(err){
+        if(cameraSessions[index] === session) cameraSessions[index] = null;
+        card.classList.remove("capturing");
+        if(state.photos[index]) drawPhoto(index);
+        else setPill(index, "Camera unavailable: choose a photo from your library instead", "warn");
+        fallback.click();
+        return;
+    }
+    if(cameraSessions[index] !== session){
+        //Cancelled while the permission prompt was open.
+        session.stream.getTracks().forEach(t => t.stop());
+        return;
+    }
+    session.video.srcObject = session.stream;
+    try{ await session.video.play(); }catch(err){ /* autoplay policies; the stream still renders */ }
+    setPill(index, "Match the outline, then press the shutter", "");
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+        const cameras = devices.filter(d => d.kind === "videoinput").length;
+        $(`photo-switch-${index}`).hidden = cameras < 2;
+        $(`photo-spacer-${index}`).hidden = cameras >= 2;
+    }).catch(() => {});
+    liveLoop(index);
+}
+
+//Stops the preview. With restore, the frame goes back to the photo it had.
+function stopCamera(index, restore = true){
+    const session = cameraSessions[index];
+    cameraSessions[index] = null;
+    if(session){
+        if(session.raf) cancelAnimationFrame(session.raf);
+        if(session.stream) session.stream.getTracks().forEach(t => t.stop());
+        session.video.srcObject = null;
+    }
+    $(`photo-card-${index}`).classList.remove("capturing");
+    const guide = $(`photo-guide-${index}`);
+    guide.getContext("2d").clearRect(0, 0, guide.width, guide.height);
+    if(restore){
+        if(state.photos[index]) drawPhoto(index);
+        else setPill(index, PILL_DEFAULT[index], "");
+    }
+}
+
+function switchCamera(index){
+    const session = cameraSessions[index];
+    if(!session) return;
+    startCamera(index, session.facing === "environment" ? "user" : "environment");
+}
+
+//The centre square of the video, scaled to outSize pixels.
+function grabSquare(video, outSize){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const side = Math.min(vw, vh);
+    const off = document.createElement("canvas");
+    off.width = outSize;
+    off.height = outSize;
+    const ctx = off.getContext("2d");
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, outSize, outSize);
+    const data = ctx.getImageData(0, 0, outSize, outSize);
+    return {width: outSize, height: outSize, data: data.data};
+}
+
+function capturePhoto(index){
+    const session = cameraSessions[index];
+    if(!session || !session.video.videoWidth || session.video.readyState < 2) return;
+    const side = Math.min(session.video.videoWidth, session.video.videoHeight);
+    const image = grabSquare(session.video, Math.min(640, side));
+    stopCamera(index, false);
+    setPhoto(index, image, "camera", guideKeypoints(image.width));
+}
+
+function liveLoop(index){
+    const session = cameraSessions[index];
+    if(!session) return;
+    const now = performance.now();
+    if(now - session.lastSample > 250 && session.video.videoWidth && session.video.readyState >= 2){
+        session.lastSample = now;
+        try{
+            session.samples = sampleFaces(grabSquare(session.video, LIVE_SAMPLE_SIZE), guideKeypoints(LIVE_SAMPLE_SIZE));
+        }catch(err){
+            session.samples = null;
+        }
+    }
+    drawGuide(index, session.samples);
+    session.raf = requestAnimationFrame(() => liveLoop(index));
+}
+
+//Draws the guide over the live preview, plus the live sticker colours.
+function drawGuide(index, samples){
+    const canvas = $(`photo-guide-${index}`);
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 300, cssH = canvas.clientHeight || cssW;
+    if(canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)){
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height, size = Math.min(w, h);
+    const kp = guideKeypoints(size, w / 2, h / 2);
+    const quads = faceQuads(kp);
+    ctx.clearRect(0, 0, w, h);
+    //Dim everything outside the cube outline.
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    kp.ring.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    //Sticker grid of each face, thin.
+    ctx.lineWidth = 1 * dpr;
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.setLineDash([]);
+    for(const quad of quads){
+        const H = homography(QUAD_GRID, quad);
+        for(const t of [1, 2]){
+            const a = applyHomography(H, t, 0), b = applyHomography(H, t, 3);
+            const c = applyHomography(H, 0, t), d = applyHomography(H, 3, t);
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.stroke();
+        }
+    }
+    //Face outlines: the hexagon and the three edges meeting at the near corner.
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.setLineDash([8 * dpr, 6 * dpr]);
+    for(const quad of quads){
+        ctx.beginPath();
+        quad.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+        ctx.closePath();
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    //Live sticker colours, read from the small sampling frame.
+    if(samples){
+        const scale = size / LIVE_SAMPLE_SIZE, ox = (w - size) / 2, oy = (h - size) / 2;
+        for(const face of samples.faces){
+            for(const st of face.stickers){
+                const [x, y] = applyHomography(face.H, st.qcol + 0.5, st.qrow + 0.5);
+                ctx.beginPath();
+                ctx.arc(ox + x * scale, oy + y * scale, 6 * dpr, 0, Math.PI * 2);
+                ctx.fillStyle = `rgb(${st.rgb.join(",")})`;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0,0,0,0.6)";
+                ctx.lineWidth = 1 * dpr;
+                ctx.stroke();
+            }
+        }
+    }
+    //The seven points.
+    const dot = (p, fill, r) => {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.75)";
+        ctx.lineWidth = 2 * dpr;
+        ctx.stroke();
+    };
+    kp.ring.forEach((p, i) => dot(p, i % 2 === 0 ? "#ff3d8f" : "#ffd23f", 7 * dpr));
+    dot(kp.centre, "#fff", 9 * dpr);
+    ctx.beginPath();
+    ctx.arc(kp.centre[0], kp.centre[1], 3 * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = "#000";
+    ctx.fill();
 }
 
 //---- progress stepper and photo status -------------------------------------
@@ -3261,6 +3535,10 @@ function init(){
                 e.target.value = "";
             });
         }
+        $(`photo-take-${i}`).addEventListener("click", () => startCamera(i));
+        $(`photo-capture-${i}`).addEventListener("click", () => capturePhoto(i));
+        $(`photo-cancel-${i}`).addEventListener("click", () => stopCamera(i));
+        $(`photo-switch-${i}`).addEventListener("click", () => switchCamera(i));
         $(`photo-reset-${i}`).addEventListener("click", () => {
             const photo = state.photos[i];
             if(!photo) return;
@@ -3284,6 +3562,7 @@ function init(){
     $("step-forward").addEventListener("click", stepForward);
     $("reset-button").addEventListener("click", () => jumpTo(0));
     $("speed").addEventListener("input", e => { player.speed = Number(e.target.value); $("speed-label").textContent = `${player.speed.toFixed(1)}x`; });
+    window.addEventListener("pagehide", () => { stopCamera(0, false); stopCamera(1, false); });
     renderNet();
     renderPalette();
     solverLink.start();

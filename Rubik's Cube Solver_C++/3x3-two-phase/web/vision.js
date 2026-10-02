@@ -308,14 +308,24 @@ export function autoDetectKeypoints(image){
     return hexagonToKeypoints(hex, image);
 }
 
-export function defaultKeypoints(width, height){
-    const cx = width / 2, cy = height / 2, r = Math.min(width, height) * 0.36;
+//The seven points of a cube seen straight along a corner: a regular hexagon
+//with the near corner at its centre. The three cube edges that meet at the
+//near corner run to the upper-left, upper-right and bottom vertices (the
+//"Y" of a cube drawn in isometric view), so those are the edge vertices
+//ring[0], ring[2], ring[4]. The ring starts at the upper-right vertex and
+//goes clockwise. The live camera guide draws exactly this, and a photo
+//taken on the guide uses these points directly.
+export function guideKeypoints(size, cx = size / 2, cy = size / 2, radius = size * 0.36){
     const ring = [];
     for(let i = 0; i < 6; i++){
-        const a = -Math.PI / 2 + i * Math.PI / 3;
-        ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+        const a = -Math.PI / 6 + i * Math.PI / 3;
+        ring.push([cx + radius * Math.cos(a), cy + radius * Math.sin(a)]);
     }
     return {centre: [cx, cy], ring};
+}
+
+export function defaultKeypoints(width, height){
+    return guideKeypoints(Math.min(width, height), width / 2, height / 2);
 }
 
 //Reduces a convex polygon to the 6 of its vertices that enclose the largest

@@ -142,6 +142,20 @@ export function randomCornerCamera(signs, rng, {width, height, roll = null, spre
     return cameraFromDirection(direction, dist, r, f, width, height);
 }
 
+//A camera that shows the cube exactly as the capture guide draws it: looking
+//straight along the corner diagonal from far away, framed so the six outer
+//vertices land on guideKeypoints(size). With roll 0 the U face is on top for
+//the URF corner; roll PI gives the same "Y" layout for the DBL corner.
+export function guideAlignedCamera(size, signs, roll = 0){
+    //Far away, so the picture is nearly orthographic: the edge vertices are
+    //0.87 units nearer than the far vertices, which would otherwise make
+    //them project a few pixels further out than a regular hexagon.
+    const distance = 200;
+    //The six outer vertices sit sqrt(6) from the viewing axis.
+    const focal = 0.36 * size * distance / Math.sqrt(6);
+    return cameraFromDirection(signs, distance, roll, focal, size, size);
+}
+
 //Renders one corner photo and also returns the exact keypoints, which the
 //tests use to separate colour problems from keypoint-detection problems.
 export function renderCornerPhoto(facelets, signs, rng, options = {}){

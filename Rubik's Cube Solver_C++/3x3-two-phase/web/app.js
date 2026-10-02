@@ -1,8 +1,8 @@
 //Page logic: photos in, keypoints, sticker net, solve, playback.
 import {CubieCube, Random, Facelets, Moves, FACE_NAMES, Solver} from "./solver.js";
-import {faceQuads, normalizeRing, topFaceOrder, applyHomography} from "./geometry.js";
+import {faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, QUAD_GRID} from "./geometry.js";
 import {renderCornerPhoto, STICKER_RGB} from "./render.js";
-import {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, PHOTO1_FACES, sampleFaceletIndex} from "./vision.js";
+import {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, guideKeypoints, PHOTO1_FACES, sampleFaceletIndex} from "./vision.js";
 import {CubeView} from "./cube3d.js";
 
 const $ = id => document.getElementById(id);
@@ -95,11 +95,16 @@ const PHOTO_HINTS = [
     "Flip the cube to the corner diagonally opposite and photograph its three faces. Any way round is fine."
 ];
 
-function setPhoto(index, image, sample){
-    const photo = {image, keypoints: autoDetectKeypoints(image), canvas: $(`photo-canvas-${index}`), samples: null, sample};
+//source is "sample", "camera" or "library". A photo taken on the live guide
+//brings its own keypoints; any other photo gets the automatic guess.
+function setPhoto(index, image, source, keypoints = null){
+    const photo = {
+        image, keypoints: keypoints || autoDetectKeypoints(image), canvas: $(`photo-canvas-${index}`),
+        samples: null, sample: source === "sample", source
+    };
     state.photos[index] = photo;
     $(`photo-card-${index}`).classList.add("has-photo");
-    $(`photo-badge-${index}`).textContent = sample ? "synthetic sample" : "your photo";
+    $(`photo-badge-${index}`).textContent = {sample: "synthetic sample", camera: "from your camera", library: "from your library"}[source];
     drawPhoto(index);
     rebuildFromPhotos();
 }
@@ -244,7 +249,7 @@ function loadPhotoFile(index, file){
         ctx.drawImage(img, 0, 0, w, h);
         const data = ctx.getImageData(0, 0, w, h);
         URL.revokeObjectURL(url);
-        setPhoto(index, {width: w, height: h, data: data.data}, false);
+        setPhoto(index, {width: w, height: h, data: data.data}, "library");
     };
     img.onerror = () => { URL.revokeObjectURL(url); setMessage("That file could not be read as an image.", "bad"); };
     img.src = url;
@@ -270,8 +275,218 @@ function useSamplePhotos(seed){
         }catch(err){ ok = false; }
         if(ok || attempt === 7) chosen = {p1, p2};
     }
-    setPhoto(0, chosen.p1.image, true);
-    setPhoto(1, chosen.p2.image, true);
+    setPhoto(0, chosen.p1.image, "sample");
+    setPhoto(1, chosen.p2.image, "sample");
+}
+
+//---- live camera -----------------------------------------------------------
+//
+//"Take photo" opens the device camera in the photo frame with a guide drawn
+//over it: the hexagon outline of a cube seen from a corner, the three edges
+//meeting at the near corner, the sticker grid and the seven points. The
+//preview is centre-cropped to the square frame and the captured photo is the
+//same square, so the guide positions are the keypoints of the photo. While
+//the preview runs, the stickers under the guide are sampled a few times a
+//second and shown as colour discs.
+
+const cameraSessions = [null, null];
+const LIVE_SAMPLE_SIZE = 240;//pixels of the square frame used for live sampling
+const PILL_DEFAULT = ["Point one corner at the camera", "Flip to the diagonally opposite corner"];
+
+function setPill(index, text, kind){
+    const pill = $(`photo-status-${index}`);
+    pill.textContent = text;
+    pill.className = "frame-pill" + (kind ? " " + kind : "");
+}
+
+function cameraSupported(){
+    return Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.isSecureContext);
+}
+
+async function startCamera(index, facing){
+    const card = $(`photo-card-${index}`);
+    const fallback = $(`photo-camera-${index}`);
+    if(!cameraSupported()){
+        //No in-page camera here (plain http, or a sandboxed page): the
+        //browser's own picker still offers the camera on phones.
+        fallback.click();
+        return;
+    }
+    stopCamera(index, false);
+    const session = {stream: null, video: $(`photo-video-${index}`), facing: facing || "environment", samples: null, lastSample: 0, raf: 0};
+    cameraSessions[index] = session;
+    card.classList.add("capturing");
+    setPill(index, "Starting the camera...", "");
+    try{
+        session.stream = await navigator.mediaDevices.getUserMedia({
+            video: {facingMode: {ideal: session.facing}, width: {ideal: 1280}, height: {ideal: 1280}},
+            audio: false
+        });
+    }catch(err){
+        if(cameraSessions[index] === session) cameraSessions[index] = null;
+        card.classList.remove("capturing");
+        if(state.photos[index]) drawPhoto(index);
+        else setPill(index, "Camera unavailable: choose a photo from your library instead", "warn");
+        fallback.click();
+        return;
+    }
+    if(cameraSessions[index] !== session){
+        //Cancelled while the permission prompt was open.
+        session.stream.getTracks().forEach(t => t.stop());
+        return;
+    }
+    session.video.srcObject = session.stream;
+    try{ await session.video.play(); }catch(err){ /* autoplay policies; the stream still renders */ }
+    setPill(index, "Match the outline, then press the shutter", "");
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+        const cameras = devices.filter(d => d.kind === "videoinput").length;
+        $(`photo-switch-${index}`).hidden = cameras < 2;
+        $(`photo-spacer-${index}`).hidden = cameras >= 2;
+    }).catch(() => {});
+    liveLoop(index);
+}
+
+//Stops the preview. With restore, the frame goes back to the photo it had.
+function stopCamera(index, restore = true){
+    const session = cameraSessions[index];
+    cameraSessions[index] = null;
+    if(session){
+        if(session.raf) cancelAnimationFrame(session.raf);
+        if(session.stream) session.stream.getTracks().forEach(t => t.stop());
+        session.video.srcObject = null;
+    }
+    $(`photo-card-${index}`).classList.remove("capturing");
+    const guide = $(`photo-guide-${index}`);
+    guide.getContext("2d").clearRect(0, 0, guide.width, guide.height);
+    if(restore){
+        if(state.photos[index]) drawPhoto(index);
+        else setPill(index, PILL_DEFAULT[index], "");
+    }
+}
+
+function switchCamera(index){
+    const session = cameraSessions[index];
+    if(!session) return;
+    startCamera(index, session.facing === "environment" ? "user" : "environment");
+}
+
+//The centre square of the video, scaled to outSize pixels.
+function grabSquare(video, outSize){
+    const vw = video.videoWidth, vh = video.videoHeight;
+    const side = Math.min(vw, vh);
+    const off = document.createElement("canvas");
+    off.width = outSize;
+    off.height = outSize;
+    const ctx = off.getContext("2d");
+    ctx.drawImage(video, (vw - side) / 2, (vh - side) / 2, side, side, 0, 0, outSize, outSize);
+    const data = ctx.getImageData(0, 0, outSize, outSize);
+    return {width: outSize, height: outSize, data: data.data};
+}
+
+function capturePhoto(index){
+    const session = cameraSessions[index];
+    if(!session || !session.video.videoWidth || session.video.readyState < 2) return;
+    const side = Math.min(session.video.videoWidth, session.video.videoHeight);
+    const image = grabSquare(session.video, Math.min(640, side));
+    stopCamera(index, false);
+    setPhoto(index, image, "camera", guideKeypoints(image.width));
+}
+
+function liveLoop(index){
+    const session = cameraSessions[index];
+    if(!session) return;
+    const now = performance.now();
+    if(now - session.lastSample > 250 && session.video.videoWidth && session.video.readyState >= 2){
+        session.lastSample = now;
+        try{
+            session.samples = sampleFaces(grabSquare(session.video, LIVE_SAMPLE_SIZE), guideKeypoints(LIVE_SAMPLE_SIZE));
+        }catch(err){
+            session.samples = null;
+        }
+    }
+    drawGuide(index, session.samples);
+    session.raf = requestAnimationFrame(() => liveLoop(index));
+}
+
+//Draws the guide over the live preview, plus the live sticker colours.
+function drawGuide(index, samples){
+    const canvas = $(`photo-guide-${index}`);
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 300, cssH = canvas.clientHeight || cssW;
+    if(canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)){
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+    }
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height, size = Math.min(w, h);
+    const kp = guideKeypoints(size, w / 2, h / 2);
+    const quads = faceQuads(kp);
+    ctx.clearRect(0, 0, w, h);
+    //Dim everything outside the cube outline.
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    kp.ring.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+    //Sticker grid of each face, thin.
+    ctx.lineWidth = 1 * dpr;
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.setLineDash([]);
+    for(const quad of quads){
+        const H = homography(QUAD_GRID, quad);
+        for(const t of [1, 2]){
+            const a = applyHomography(H, t, 0), b = applyHomography(H, t, 3);
+            const c = applyHomography(H, 0, t), d = applyHomography(H, 3, t);
+            ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(d[0], d[1]); ctx.stroke();
+        }
+    }
+    //Face outlines: the hexagon and the three edges meeting at the near corner.
+    ctx.lineWidth = 2 * dpr;
+    ctx.strokeStyle = "rgba(255,255,255,0.95)";
+    ctx.setLineDash([8 * dpr, 6 * dpr]);
+    for(const quad of quads){
+        ctx.beginPath();
+        quad.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+        ctx.closePath();
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    //Live sticker colours, read from the small sampling frame.
+    if(samples){
+        const scale = size / LIVE_SAMPLE_SIZE, ox = (w - size) / 2, oy = (h - size) / 2;
+        for(const face of samples.faces){
+            for(const st of face.stickers){
+                const [x, y] = applyHomography(face.H, st.qcol + 0.5, st.qrow + 0.5);
+                ctx.beginPath();
+                ctx.arc(ox + x * scale, oy + y * scale, 6 * dpr, 0, Math.PI * 2);
+                ctx.fillStyle = `rgb(${st.rgb.join(",")})`;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0,0,0,0.6)";
+                ctx.lineWidth = 1 * dpr;
+                ctx.stroke();
+            }
+        }
+    }
+    //The seven points.
+    const dot = (p, fill, r) => {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], r, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.75)";
+        ctx.lineWidth = 2 * dpr;
+        ctx.stroke();
+    };
+    kp.ring.forEach((p, i) => dot(p, i % 2 === 0 ? "#ff3d8f" : "#ffd23f", 7 * dpr));
+    dot(kp.centre, "#fff", 9 * dpr);
+    ctx.beginPath();
+    ctx.arc(kp.centre[0], kp.centre[1], 3 * dpr, 0, Math.PI * 2);
+    ctx.fillStyle = "#000";
+    ctx.fill();
 }
 
 //---- progress stepper and photo status -------------------------------------
@@ -595,6 +810,10 @@ function init(){
                 e.target.value = "";
             });
         }
+        $(`photo-take-${i}`).addEventListener("click", () => startCamera(i));
+        $(`photo-capture-${i}`).addEventListener("click", () => capturePhoto(i));
+        $(`photo-cancel-${i}`).addEventListener("click", () => stopCamera(i));
+        $(`photo-switch-${i}`).addEventListener("click", () => switchCamera(i));
         $(`photo-reset-${i}`).addEventListener("click", () => {
             const photo = state.photos[i];
             if(!photo) return;
@@ -618,6 +837,7 @@ function init(){
     $("step-forward").addEventListener("click", stepForward);
     $("reset-button").addEventListener("click", () => jumpTo(0));
     $("speed").addEventListener("input", e => { player.speed = Number(e.target.value); $("speed-label").textContent = `${player.speed.toFixed(1)}x`; });
+    window.addEventListener("pagehide", () => { stopCamera(0, false); stopCamera(1, false); });
     renderNet();
     renderPalette();
     solverLink.start();

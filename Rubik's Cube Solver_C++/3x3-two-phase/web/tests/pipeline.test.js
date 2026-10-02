@@ -10,8 +10,9 @@ import {dirname, join} from "node:path";
 
 import {CubieCube, Random, Facelets, Moves, solveVectors, Solver} from "../solver.js";
 import {homography, applyHomography, faceGridCorners, quadCellToFaceCell, QUAD_GRID, normalizeRing, cameraFromDirection} from "../geometry.js";
-import {renderCornerPhoto, STICKER_RGB, cubePolygons, turningLayer} from "../render.js";
-import {sampleFaces, reconstruct, autoDetectKeypoints, hungarian, groupColours, rgbToLab, PHOTO2_CANDIDATES} from "../vision.js";
+import {renderCornerPhoto, STICKER_RGB, cubePolygons, turningLayer, guideAlignedCamera} from "../render.js";
+import {sampleFaces, reconstruct, autoDetectKeypoints, hungarian, groupColours, rgbToLab, PHOTO2_CANDIDATES, guideKeypoints, defaultKeypoints} from "../vision.js";
+import {projectKeypoints} from "../geometry.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const URF = [1, 1, 1], DBL = [-1, -1, -1];
@@ -164,6 +165,41 @@ test("the 3D viewer draws every visible sticker, also mid-turn", () => {
     const turning = cubePolygons(Facelets.SOLVED, camera, turningLayer(3, 0.5));
     assert.ok(turning.length >= still.length - 10);
     assert.ok(turning.every(p => p.points.length === 4 && p.rgb.length === 3));
+});
+
+test("the capture guide has the right parity and matches an aligned camera", () => {
+    const size = 480;
+    const guide = guideKeypoints(size);
+    assert.deepEqual(defaultKeypoints(size, size), guide);
+    for(const [signs, roll] of [[URF, 0], [DBL, Math.PI]]){
+        const projected = projectKeypoints(guideAlignedCamera(size, signs, roll), signs);
+        assert.ok(Math.hypot(projected.centre[0] - size / 2, projected.centre[1] - size / 2) < 1);
+        //Every projected outer vertex lands on a guide vertex of the same kind
+        //(edge vertex or far vertex).
+        for(let i = 0; i < 6; i++){
+            const p = projected.ring[i];
+            let best = -1, bestD = Infinity;
+            guide.ring.forEach((g, j) => {
+                const d = Math.hypot(g[0] - p[0], g[1] - p[1]);
+                if(d < bestD){ bestD = d; best = j; }
+            });
+            assert.ok(bestD < 2, `vertex ${i} is ${bestD.toFixed(1)} px from the guide`);
+            assert.equal(best % 2, i % 2, "the guide's edge vertices must be the cube's edge vertices");
+        }
+    }
+});
+
+test("photos taken on the guide reconstruct with the guide points, no detection", () => {
+    const rng = new Random(4242);
+    const size = 480;
+    for(let i = 0; i < 10; i++){
+        const facelets = CubieCube.random(rng).toFacelets();
+        const p1 = renderCornerPhoto(facelets, URF, rng, {width: size, height: size, camera: guideAlignedCamera(size, URF, 0)});
+        const p2 = renderCornerPhoto(facelets, DBL, rng, {width: size, height: size, camera: guideAlignedCamera(size, DBL, Math.PI)});
+        const result = reconstruct(sampleFaces(p1.image, guideKeypoints(size)), sampleFaces(p2.image, guideKeypoints(size)));
+        assert.ok(sameCubeUpToRotation(facelets, result.facelets), `cube ${i}: ${result.message}`);
+        assert.equal(result.swapped, null);
+    }
 });
 
 test("the JavaScript solver matches the C++ solver move for move", () => {

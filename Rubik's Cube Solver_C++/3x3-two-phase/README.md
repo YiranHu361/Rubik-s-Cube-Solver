@@ -103,27 +103,38 @@ Everything runs in the browser; no photo leaves the device.
 The input is exactly two photos of the cube taken from opposite corners,
 three faces each. The pipeline, in the order the page shows it:
 
-1. **Keypoints** (`vision.js`, `autoDetectKeypoints`). The cube is the big
-   blob that differs from the border colour; its convex hull is reduced to the
-   six vertices enclosing the most area (a dynamic programme over the hull);
-   the near vertex is found where the three dark gap lines meet. The seven
-   points can be dragged.
-2. **Sticker colours** (`geometry.js`, `vision.js`). A homography maps each
+1. **Live capture** (`app.js`, `startCamera`). "Take photo" opens the device
+   camera in the square photo frame (rear camera on phones) with a guide
+   drawn over it: the hexagon outline of a cube seen from a corner, the three
+   edges that meet at the near corner, the sticker grid and the seven points
+   (`guideKeypoints` in `vision.js`). The preview is centre-cropped to the
+   same square that gets captured, so the guide positions are the photo's
+   keypoints directly. While the preview runs, the stickers under the guide
+   are sampled four times a second and shown as colour discs. The preview is
+   not mirrored, because a mirrored cube reads as impossible. Without camera
+   access (plain http, a sandboxed page, permission denied) the button falls
+   back to the browser's file picker.
+2. **Keypoints for uploaded photos** (`vision.js`, `autoDetectKeypoints`). The
+   cube is the big blob that differs from the border colour; its convex hull
+   is reduced to the six vertices enclosing the most area (a dynamic
+   programme over the hull); the near vertex is found where the three dark
+   gap lines meet. The seven points can be dragged in either case.
+3. **Sticker colours** (`geometry.js`, `vision.js`). A homography maps each
    face's 3x3 grid onto its photographed quadrilateral; the median colour of
    the middle of every sticker is read, then the shading is divided out and
    the colour converted to Lab.
-3. **Balanced grouping**. The 54 stickers are assigned to the six centre
+4. **Balanced grouping**. The 54 stickers are assigned to the six centre
    colours by a minimum-cost assignment (Hungarian algorithm) that gives every
    colour exactly nine stickers.
-4. **Facelet string**. Photo 1 names U, R, F (top face first, then clockwise).
+5. **Facelet string**. Photo 1 names U, R, F (top face first, then clockwise).
    The three faces of photo 2 can be D, B, L in three cyclic orders depending
    on how the cube was flipped; each is tried and the one that is a valid
    cube wins. If none is valid, the cheapest swap of two stickers that makes
    a valid cube is applied and flagged. The unfolded cube can then be edited
    by hand, with the validity rule that fails spelled out.
-5. **Solve** (`solver.js` in a Web Worker, `worker.js`). The JavaScript port
+6. **Solve** (`solver.js` in a Web Worker, `worker.js`). The JavaScript port
    of the C++ solver; it stops at 19 moves or after 1.5 s of improving.
-6. **Playback** (`cube3d.js`). An animated 3D cube seen from the viewpoint
+7. **Playback** (`cube3d.js`). An animated 3D cube seen from the viewpoint
    of photo 1, with play, pause, step and a draggable viewpoint.
 
 `render.js` is a small software renderer that draws synthetic photos of any
@@ -142,8 +153,16 @@ and flips; all 12 ways of rolling the second photo; 27 of 30 cubes with
 automatic keypoints (the page retries seeds for its samples; real photos get
 the editable net); a planted misread sticker repaired by the swap; and the
 JavaScript solver returning exactly the same move sequences as
-`cube3 vectors 60 --stop 21`. In Chrome the worker builds its tables in
-about 1.3 s and typical solves take 0.1 to 1.5 s.
+`cube3 vectors 60 --stop 21`. Two tests cover the live guide: its edge
+vertices are the cube's edge vertices for a camera looking straight along
+a corner, and photos rendered on the guide reconstruct from the guide points
+alone. In Chrome the worker builds its tables in about 1.3 s and typical
+solves take 0.1 to 1.5 s.
+
+`node tests/browser-check.cjs` (optional, needs Playwright and Chromium)
+drives the built page in a headless browser with a fake webcam showing
+synthetic cube photos: take photo 1 on the guide, take photo 2, valid cube,
+solved, and the cancel path.
 
 ## Suggested resume bullets
 
