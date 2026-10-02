@@ -2419,6 +2419,31 @@ function reconstruct(photo1, photo2){
 //Returns {centre, ring} in image pixels, or a default hexagon if nothing
 //cube-like is found.
 function autoDetectKeypoints(image){
+    const hull = silhouetteHull(image);
+    if(!hull) return defaultKeypoints(image.width, image.height);
+    const hex = hexagonFromHull(hull);
+    if(!hex) return defaultKeypoints(image.width, image.height);
+    return hexagonToKeypoints(hex, image);
+}
+
+//Moves each point to the nearest vertex of the silhouette hull when one is
+//within "radius" pixels. Used to tidy up corner guesses from the vision
+//model, which are usually a few pixels off and occasionally a sticker off.
+function snapToHull(points, hull, radius){
+    if(!hull) return points.map(p => p.slice());
+    return points.map(p => {
+        let best = null, bestD = radius;
+        for(const v of hull){
+            const d = Math.hypot(v[0] - p[0], v[1] - p[1]);
+            if(d < bestD){ bestD = d; best = v; }
+        }
+        return best ? best.slice() : p.slice();
+    });
+}
+
+//Convex hull (in image pixels) of the biggest blob that differs from the
+//border colour, or null when there is no such blob.
+function silhouetteHull(image){
     const {width, height} = image;
     //Work on a reduced image for speed.
     const step = Math.max(1, Math.floor(Math.max(width, height) / 160));
@@ -2466,14 +2491,11 @@ function autoDetectKeypoints(image){
         if(size > bestSize){ bestSize = size; bestComp = count; }
         count++;
     }
-    if(bestSize < w * h * 0.02) return defaultKeypoints(width, height);
+    if(bestSize < w * h * 0.02) return null;
     //Close small holes between stickers by taking the convex hull of the blob.
     const pts = [];
     for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) if(comp[y * w + x] === bestComp) pts.push([x * step + step / 2, y * step + step / 2]);
-    const hull = convexHull(pts);
-    const hex = hexagonFromHull(hull);
-    if(!hex) return defaultKeypoints(width, height);
-    return hexagonToKeypoints(hex, image);
+    return convexHull(pts);
 }
 
 //The seven points of a cube seen straight along a corner: a regular hexagon
@@ -2540,7 +2562,9 @@ function hexagonFromHull(hull){
 //stickers of neighbouring faces), so for each parity the estimate is refined
 //to the point whose three segments to the candidate edge vertices are
 //darkest, and the parity with the darker segments wins.
-function hexagonToKeypoints(hex, image){
+//nearGuess (pixels), when given, replaces the parallelogram estimate as the
+//starting point of the search, e.g. the vision model's near-corner guess.
+function hexagonToKeypoints(hex, image, nearGuess = null){
     const size = Math.max(...hex.map(p => Math.hypot(p[0] - hex[0][0], p[1] - hex[0][1])));
     //Point-in-hexagon test that works whichever way round the hull goes:
     //inside points are on the same side of every edge as the polygon itself.
@@ -2565,7 +2589,7 @@ function hexagonToKeypoints(hex, image){
             const e1 = hex[(parity + 2 * k) % 6], far = hex[(parity + 2 * k + 1) % 6], e2 = hex[(parity + 2 * k + 2) % 6];
             estimates.push([e1[0] + e2[0] - far[0], e1[1] + e2[1] - far[1]]);
         }
-        const guess = [0, 1].map(c => estimates.reduce((s, e) => s + e[c], 0) / 3);
+        const guess = nearGuess ? nearGuess.slice() : [0, 1].map(c => estimates.reduce((s, e) => s + e[c], 0) / 3);
         let centre = guess;
         let darkest = Infinity;
         if(image){
@@ -2613,7 +2637,7 @@ function segmentBrightness(image, a, b){
     return sum / n;
 }
 
-return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, guideKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
+return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, snapToHull, silhouetteHull, guideKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
 })();
 
 const __m_aiRead = (() => {
@@ -2634,7 +2658,7 @@ const __m_aiRead = (() => {
 //photo-relative grid of geometry.js (qrow, qcol).
 const {faceQuads, normalizeRing, topFaceOrder, homography, QUAD_GRID} = __m_geometry;
 const {STICKER_RGB} = __m_render;
-const {hexagonToKeypoints, sampleFaceletIndex, PHOTO2_CANDIDATES} = __m_vision;
+const {hexagonToKeypoints, hexagonFromHull, silhouetteHull, snapToHull, sampleFaceletIndex, PHOTO2_CANDIDATES} = __m_vision;
 const {FACE_NAMES} = __m_solver;
 const COLOUR_NAMES = ["white", "yellow", "red", "orange", "green", "blue"];
 //Display colour per name, and a stand-in for the Lab colour: six points far
@@ -2663,12 +2687,17 @@ function validatePhotoReading(reading){
     return "";
 }
 
-//Keypoints in pixels from the model's rough corners, refined on the image
-//(hexagonToKeypoints finds the near corner along the dark gap lines and
-//works out which outline corners are joined to it).
+//Keypoints in pixels from the model's rough corners, refined on the image:
+//each outline corner snaps to the nearest corner of the cube's silhouette
+//when one is close, then hexagonToKeypoints finds the near corner along the
+//dark gap lines and works out which outline corners are joined to it.
 function keypointsFromCorners(corners, image){
-    const hex = corners.outer.map(([x, y]) => [x * image.width, y * image.height]);
-    return hexagonToKeypoints(hex, image);
+    const rough = corners.outer.map(([x, y]) => [x * image.width, y * image.height]);
+    const hull = silhouetteHull(image);
+    const silhouetteCorners = hull ? hexagonFromHull(hull) : null;
+    const hex = snapToHull(rough, silhouetteCorners, 0.06 * Math.max(image.width, image.height));
+    const near = [corners.near[0] * image.width, corners.near[1] * image.height];
+    return hexagonToKeypoints(hex, image, near);
 }
 
 //Builds what sampleFaces() returns from a reading. With keypoints, each
@@ -3447,19 +3476,47 @@ async function readWithAi(){
             const why = reply && reply.error ? reply.error : `the server answered ${response.status}`;
             throw new Error(why);
         }
-        const samples = [];
+        //The model's corner guesses are usually within a few pixels, so the
+        //first try is the local colour reader on those corners. The model's
+        //own sticker grids are the fallback: it reads colours well but
+        //sometimes misplaces them within a slanted face.
+        const readings = [];
+        let cornersUsable = true;
         for(let p = 0; p < 2; p++){
             const reading = reply.photos[p];
             const problem = validatePhotoReading(reading);
             if(problem) throw new Error("the reply was incomplete (" + problem + ")");
+            readings.push(reading);
             const photo = state.photos[p];
             if(reading.corners){
-                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }catch(err){ /* keep the current points */ }
+                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }
+                catch(err){ cornersUsable = false; }
+            }else{
+                cornersUsable = false;
             }
-            photo.samples = samplesFromReading(reading, photo.keypoints);
-            samples.push(photo.samples);
         }
-        applyReconstruction(reconstruct(samples[0], samples[1]), "Read with AI: ");
+        let local = null;
+        if(cornersUsable){
+            try{
+                const s1 = sampleFaces(a.image, a.keypoints), s2 = sampleFaces(b.image, b.keypoints);
+                local = {samples: [s1, s2], result: reconstruct(s1, s2)};
+            }catch(err){ local = null; }
+        }
+        const aiSamples = [samplesFromReading(readings[0], a.keypoints), samplesFromReading(readings[1], b.keypoints)];
+        const fromModel = {samples: aiSamples, result: reconstruct(aiSamples[0], aiSamples[1])};
+        let chosen, prefix;
+        if(local && local.result.valid && !local.result.swapped){
+            chosen = local; prefix = "Read with AI (corners by AI, colours read locally): ";
+        }else if(fromModel.result.valid){
+            chosen = fromModel; prefix = "Read with AI (stickers named by the model): ";
+        }else if(local && local.result.valid){
+            chosen = local; prefix = "Read with AI (corners by AI, colours read locally): ";
+        }else{
+            chosen = fromModel; prefix = "Read with AI: ";
+        }
+        a.samples = chosen.samples[0];
+        b.samples = chosen.samples[1];
+        applyReconstruction(chosen.result, prefix);
     }catch(err){
         const text = String(err && err.message || err);
         const offline = /fetch|NetworkError|Failed to fetch|answered 404/.test(text);

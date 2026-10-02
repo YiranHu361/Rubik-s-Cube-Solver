@@ -13,7 +13,7 @@ import {homography, applyHomography, faceGridCorners, quadCellToFaceCell, QUAD_G
 import {renderCornerPhoto, STICKER_RGB, cubePolygons, turningLayer, guideAlignedCamera} from "../render.js";
 import {sampleFaces, reconstruct, autoDetectKeypoints, hungarian, groupColours, rgbToLab, PHOTO2_CANDIDATES, guideKeypoints, defaultKeypoints} from "../vision.js";
 import {projectKeypoints} from "../geometry.js";
-import {samplesFromReading, validatePhotoReading, readingFromFacelets} from "../aiRead.js";
+import {samplesFromReading, validatePhotoReading, readingFromFacelets, keypointsFromCorners} from "../aiRead.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const URF = [1, 1, 1], DBL = [-1, -1, -1];
@@ -239,6 +239,34 @@ test("a reading with one wrong sticker is repaired, and miscounted colours are r
     assert.ok(result.valid, result.message);
     assert.ok(sameCubeUpToRotation(facelets, result.facelets));
     assert.equal(validatePhotoReading({faces: [{grid: [["pink", "white", "white"], ["white"] , []]}]}), "expected three faces");
+});
+
+test("rough corner guesses from the model become usable keypoints", () => {
+    const rng = new Random(2026);
+    const unit = () => rng.next() / 4294967296;
+    let recovered = 0;
+    const total = 20;
+    for(let i = 0; i < total; i++){
+        const facelets = CubieCube.random(rng).toFacelets();
+        const {p1, p2} = photograph(facelets, rng, {spread: 0.25});
+        //Corners as the model reports them: fractions of the frame, a few
+        //pixels off, one of them a lot off, in any clockwise starting point.
+        const rough = photo => {
+            const outer = photo.keypoints.ring.map(([x, y]) => [x / photo.image.width, y / photo.image.height]);
+            const start = Math.floor(unit() * 6);
+            const spun = outer.map((_, k) => outer[(k + start) % 6]);
+            const noisy = spun.map(([x, y]) => [x + (unit() - 0.5) * 0.03, y + (unit() - 0.5) * 0.03]);
+            const bad = Math.floor(unit() * 6);
+            noisy[bad] = [noisy[bad][0] + 0.04, noisy[bad][1] - 0.03];
+            const near = [photo.keypoints.centre[0] / photo.image.width + 0.03, photo.keypoints.centre[1] / photo.image.height - 0.02];
+            return {near, outer: noisy};
+        };
+        const k1 = keypointsFromCorners(rough(p1), p1.image), k2 = keypointsFromCorners(rough(p2), p2.image);
+        const result = reconstruct(sampleFaces(p1.image, k1), sampleFaces(p2.image, k2));
+        if(sameCubeUpToRotation(facelets, result.facelets)) recovered++;
+    }
+    console.log(`  rough corners recovered ${recovered}/${total} cubes`);
+    assert.ok(recovered >= total * 0.85, `only ${recovered}/${total} recovered from rough corners`);
 });
 
 test("the JavaScript solver matches the C++ solver move for move", () => {

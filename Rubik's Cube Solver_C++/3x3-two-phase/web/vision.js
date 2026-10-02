@@ -251,6 +251,31 @@ export function reconstruct(photo1, photo2){
 //Returns {centre, ring} in image pixels, or a default hexagon if nothing
 //cube-like is found.
 export function autoDetectKeypoints(image){
+    const hull = silhouetteHull(image);
+    if(!hull) return defaultKeypoints(image.width, image.height);
+    const hex = hexagonFromHull(hull);
+    if(!hex) return defaultKeypoints(image.width, image.height);
+    return hexagonToKeypoints(hex, image);
+}
+
+//Moves each point to the nearest vertex of the silhouette hull when one is
+//within "radius" pixels. Used to tidy up corner guesses from the vision
+//model, which are usually a few pixels off and occasionally a sticker off.
+export function snapToHull(points, hull, radius){
+    if(!hull) return points.map(p => p.slice());
+    return points.map(p => {
+        let best = null, bestD = radius;
+        for(const v of hull){
+            const d = Math.hypot(v[0] - p[0], v[1] - p[1]);
+            if(d < bestD){ bestD = d; best = v; }
+        }
+        return best ? best.slice() : p.slice();
+    });
+}
+
+//Convex hull (in image pixels) of the biggest blob that differs from the
+//border colour, or null when there is no such blob.
+export function silhouetteHull(image){
     const {width, height} = image;
     //Work on a reduced image for speed.
     const step = Math.max(1, Math.floor(Math.max(width, height) / 160));
@@ -298,14 +323,11 @@ export function autoDetectKeypoints(image){
         if(size > bestSize){ bestSize = size; bestComp = count; }
         count++;
     }
-    if(bestSize < w * h * 0.02) return defaultKeypoints(width, height);
+    if(bestSize < w * h * 0.02) return null;
     //Close small holes between stickers by taking the convex hull of the blob.
     const pts = [];
     for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) if(comp[y * w + x] === bestComp) pts.push([x * step + step / 2, y * step + step / 2]);
-    const hull = convexHull(pts);
-    const hex = hexagonFromHull(hull);
-    if(!hex) return defaultKeypoints(width, height);
-    return hexagonToKeypoints(hex, image);
+    return convexHull(pts);
 }
 
 //The seven points of a cube seen straight along a corner: a regular hexagon
@@ -372,7 +394,9 @@ export function hexagonFromHull(hull){
 //stickers of neighbouring faces), so for each parity the estimate is refined
 //to the point whose three segments to the candidate edge vertices are
 //darkest, and the parity with the darker segments wins.
-export function hexagonToKeypoints(hex, image){
+//nearGuess (pixels), when given, replaces the parallelogram estimate as the
+//starting point of the search, e.g. the vision model's near-corner guess.
+export function hexagonToKeypoints(hex, image, nearGuess = null){
     const size = Math.max(...hex.map(p => Math.hypot(p[0] - hex[0][0], p[1] - hex[0][1])));
     //Point-in-hexagon test that works whichever way round the hull goes:
     //inside points are on the same side of every edge as the polygon itself.
@@ -397,7 +421,7 @@ export function hexagonToKeypoints(hex, image){
             const e1 = hex[(parity + 2 * k) % 6], far = hex[(parity + 2 * k + 1) % 6], e2 = hex[(parity + 2 * k + 2) % 6];
             estimates.push([e1[0] + e2[0] - far[0], e1[1] + e2[1] - far[1]]);
         }
-        const guess = [0, 1].map(c => estimates.reduce((s, e) => s + e[c], 0) / 3);
+        const guess = nearGuess ? nearGuess.slice() : [0, 1].map(c => estimates.reduce((s, e) => s + e[c], 0) / 3);
         let centre = guess;
         let darkest = Infinity;
         if(image){

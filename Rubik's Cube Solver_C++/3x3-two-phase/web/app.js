@@ -608,19 +608,47 @@ async function readWithAi(){
             const why = reply && reply.error ? reply.error : `the server answered ${response.status}`;
             throw new Error(why);
         }
-        const samples = [];
+        //The model's corner guesses are usually within a few pixels, so the
+        //first try is the local colour reader on those corners. The model's
+        //own sticker grids are the fallback: it reads colours well but
+        //sometimes misplaces them within a slanted face.
+        const readings = [];
+        let cornersUsable = true;
         for(let p = 0; p < 2; p++){
             const reading = reply.photos[p];
             const problem = validatePhotoReading(reading);
             if(problem) throw new Error("the reply was incomplete (" + problem + ")");
+            readings.push(reading);
             const photo = state.photos[p];
             if(reading.corners){
-                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }catch(err){ /* keep the current points */ }
+                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }
+                catch(err){ cornersUsable = false; }
+            }else{
+                cornersUsable = false;
             }
-            photo.samples = samplesFromReading(reading, photo.keypoints);
-            samples.push(photo.samples);
         }
-        applyReconstruction(reconstruct(samples[0], samples[1]), "Read with AI: ");
+        let local = null;
+        if(cornersUsable){
+            try{
+                const s1 = sampleFaces(a.image, a.keypoints), s2 = sampleFaces(b.image, b.keypoints);
+                local = {samples: [s1, s2], result: reconstruct(s1, s2)};
+            }catch(err){ local = null; }
+        }
+        const aiSamples = [samplesFromReading(readings[0], a.keypoints), samplesFromReading(readings[1], b.keypoints)];
+        const fromModel = {samples: aiSamples, result: reconstruct(aiSamples[0], aiSamples[1])};
+        let chosen, prefix;
+        if(local && local.result.valid && !local.result.swapped){
+            chosen = local; prefix = "Read with AI (corners by AI, colours read locally): ";
+        }else if(fromModel.result.valid){
+            chosen = fromModel; prefix = "Read with AI (stickers named by the model): ";
+        }else if(local && local.result.valid){
+            chosen = local; prefix = "Read with AI (corners by AI, colours read locally): ";
+        }else{
+            chosen = fromModel; prefix = "Read with AI: ";
+        }
+        a.samples = chosen.samples[0];
+        b.samples = chosen.samples[1];
+        applyReconstruction(chosen.result, prefix);
     }catch(err){
         const text = String(err && err.message || err);
         const offline = /fetch|NetworkError|Failed to fetch|answered 404/.test(text);

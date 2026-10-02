@@ -15,7 +15,7 @@
 //photo-relative grid of geometry.js (qrow, qcol).
 import {faceQuads, normalizeRing, topFaceOrder, homography, QUAD_GRID} from "./geometry.js";
 import {STICKER_RGB} from "./render.js";
-import {hexagonToKeypoints, sampleFaceletIndex, PHOTO2_CANDIDATES} from "./vision.js";
+import {hexagonToKeypoints, hexagonFromHull, silhouetteHull, snapToHull, sampleFaceletIndex, PHOTO2_CANDIDATES} from "./vision.js";
 import {FACE_NAMES} from "./solver.js";
 
 export const COLOUR_NAMES = ["white", "yellow", "red", "orange", "green", "blue"];
@@ -45,12 +45,17 @@ export function validatePhotoReading(reading){
     return "";
 }
 
-//Keypoints in pixels from the model's rough corners, refined on the image
-//(hexagonToKeypoints finds the near corner along the dark gap lines and
-//works out which outline corners are joined to it).
+//Keypoints in pixels from the model's rough corners, refined on the image:
+//each outline corner snaps to the nearest corner of the cube's silhouette
+//when one is close, then hexagonToKeypoints finds the near corner along the
+//dark gap lines and works out which outline corners are joined to it.
 export function keypointsFromCorners(corners, image){
-    const hex = corners.outer.map(([x, y]) => [x * image.width, y * image.height]);
-    return hexagonToKeypoints(hex, image);
+    const rough = corners.outer.map(([x, y]) => [x * image.width, y * image.height]);
+    const hull = silhouetteHull(image);
+    const silhouetteCorners = hull ? hexagonFromHull(hull) : null;
+    const hex = snapToHull(rough, silhouetteCorners, 0.06 * Math.max(image.width, image.height));
+    const near = [corners.near[0] * image.width, corners.near[1] * image.height];
+    return hexagonToKeypoints(hex, image, near);
 }
 
 //Builds what sampleFaces() returns from a reading. With keypoints, each

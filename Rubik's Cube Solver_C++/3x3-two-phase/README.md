@@ -141,13 +141,19 @@ three faces each. The pipeline, in the order the page shows it:
    the seven corners. The grid convention is the photo-relative grid of step
    2 (first index along the edge towards the next face clockwise, second
    along the edge towards the previous face), so the reply feeds the same
-   balanced grouping, naming, validity check and repair as a local read: a
-   misnamed sticker is moved by the assignment, a swapped pair by the repair,
-   and anything else is left for the net. The corner guess, when usable,
-   becomes the draggable points. Costs about two cents per read; the key
-   lives only on the server (`ANTHROPIC_API_KEY` in the Vercel project).
-   Server-side refusal fallbacks are enabled, so a safety-classifier false
-   positive retries on another model instead of failing.
+   balanced grouping, naming, validity check and repair as a local read.
+   Measured on synthetic photos at random angles, the model's corner guesses
+   are usually within 1 to 7 px on a 640 px frame (one in six off by 20 to
+   30 px), while its sticker grids misplace a few stickers per face. So the
+   page uses the corners first: they snap to the silhouette's corners, the
+   near corner is refined along the gap lines (`keypointsFromCorners`), and
+   the local colour reader runs on them. The model's grids are the fallback
+   when that is not a valid cube. On four live calls this read the right cube
+   four times in 6 to 8 s each, about 2,200 input and 450 output tokens, so
+   about two cents per read. The key lives only on the server
+   (`ANTHROPIC_API_KEY` in the Vercel project). Server-side refusal
+   fallbacks are enabled, so a safety-classifier false positive retries on
+   another model instead of failing.
 6. **Solve** (`solver.js` in a Web Worker, `worker.js`). The JavaScript port
    of the C++ solver; it stops at 19 moves or after 1.5 s of improving.
 7. **Playback** (`cube3d.js`). An animated 3D cube seen from the viewpoint

@@ -123,7 +123,7 @@ function pngDataUrl(image){
         await route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({...readingFromFacelets(facelets), model: "mock"})});
     });
     await page.click("#ai-button");
-    await page.waitForFunction(() => /^Read with AI: |failed|needs the hosted/.test(document.getElementById("net-message").textContent), null, {timeout: 20000});
+    await page.waitForFunction(() => /^Read with AI|failed|needs the hosted/.test(document.getElementById("net-message").textContent), null, {timeout: 20000});
     const aiMessage = await page.textContent("#net-message");
     console.log("ai:", aiMessage, "| sent", request ? `${request.photos.length} photos, ${request.photos[0].mediaType}, ${Math.round(request.photos[0].data.length / 1024)} KB each` : "nothing");
     await page.screenshot({path: path.join(here, "..", "dist", "check-page.png"), fullPage: true});
