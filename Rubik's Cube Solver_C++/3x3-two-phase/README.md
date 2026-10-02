@@ -132,6 +132,22 @@ three faces each. The pipeline, in the order the page shows it:
    cube wins. If none is valid, the cheapest swap of two stickers that makes
    a valid cube is applied and flagged. The unfolded cube can then be edited
    by hand, with the validity rule that fails spelled out.
+5b. **Read with AI** (`aiRead.js`, `api/read-cube.js` at the repository
+   root). Lining a cube up with an outline is fiddly, so the stickers step
+   has a button that sends both photos (downscaled JPEGs, about 50 KB each)
+   to a Vercel function, which asks Claude (`claude-opus-5-5` by default,
+   `CUBE_READ_MODEL` overrides it) for the three visible faces of each photo
+   as 3x3 grids of colour names in a fixed JSON schema, plus a rough guess of
+   the seven corners. The grid convention is the photo-relative grid of step
+   2 (first index along the edge towards the next face clockwise, second
+   along the edge towards the previous face), so the reply feeds the same
+   balanced grouping, naming, validity check and repair as a local read: a
+   misnamed sticker is moved by the assignment, a swapped pair by the repair,
+   and anything else is left for the net. The corner guess, when usable,
+   becomes the draggable points. Costs about two cents per read; the key
+   lives only on the server (`ANTHROPIC_API_KEY` in the Vercel project).
+   Server-side refusal fallbacks are enabled, so a safety-classifier false
+   positive retries on another model instead of failing.
 6. **Solve** (`solver.js` in a Web Worker, `worker.js`). The JavaScript port
    of the C++ solver; it stops at 19 moves or after 1.5 s of improving.
 7. **Playback** (`cube3d.js`). An animated 3D cube seen from the viewpoint
@@ -159,10 +175,17 @@ a corner, and photos rendered on the guide reconstruct from the guide points
 alone. In Chrome the worker builds its tables in about 1.3 s and typical
 solves take 0.1 to 1.5 s.
 
+Two more tests simulate a vision-model reading (`readingFromFacelets`):
+a perfect reading reconstructs the cube for every way of flipping photo 2,
+and a reading with a swapped pair or a misnamed sticker is repaired.
+`tests/api.test.js` runs the Vercel function against a fake client: the
+request it builds (both images, the instructions, the JSON schema, the
+fallback opt-in), refusal and bad-JSON handling, and the HTTP validation.
+
 `node tests/browser-check.cjs` (optional, needs Playwright and Chromium)
 drives the built page in a headless browser with a fake webcam showing
 synthetic cube photos: take photo 1 on the guide, take photo 2, valid cube,
-solved, and the cancel path.
+solved, the cancel path, and Read with AI against a mocked server.
 
 ## Suggested resume bullets
 

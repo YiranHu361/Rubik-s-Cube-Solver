@@ -297,7 +297,11 @@ footer a{color:var(--accent)}
                 <p class="message info" id="net-message">Add two photos, or use the sample photos.</p>
                 <div class="palette" id="palette"></div>
                 <p class="small">Every colour must appear exactly nine times, each corner and edge piece exactly once, and the twists and flips must add up. The message above says which rule fails.</p>
-                <div><button type="button" id="reread-button">Read the photos again</button></div>
+                <div class="toolbar">
+                    <button type="button" id="ai-button" class="primary" disabled>Read with AI</button>
+                    <button type="button" id="reread-button">Read the photos again</button>
+                </div>
+                <p class="small">Read with AI sends the two photos to Claude, which reads the 54 stickers from any angle, no outline needed. About two cents per read; only the photos leave your device, and only when you press it.</p>
             </div>
         </div>
     </div>

@@ -13,6 +13,7 @@ import {homography, applyHomography, faceGridCorners, quadCellToFaceCell, QUAD_G
 import {renderCornerPhoto, STICKER_RGB, cubePolygons, turningLayer, guideAlignedCamera} from "../render.js";
 import {sampleFaces, reconstruct, autoDetectKeypoints, hungarian, groupColours, rgbToLab, PHOTO2_CANDIDATES, guideKeypoints, defaultKeypoints} from "../vision.js";
 import {projectKeypoints} from "../geometry.js";
+import {samplesFromReading, validatePhotoReading, readingFromFacelets} from "../aiRead.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const URF = [1, 1, 1], DBL = [-1, -1, -1];
@@ -200,6 +201,44 @@ test("photos taken on the guide reconstruct with the guide points, no detection"
         assert.ok(sameCubeUpToRotation(facelets, result.facelets), `cube ${i}: ${result.message}`);
         assert.equal(result.swapped, null);
     }
+});
+
+test("a vision-model reading of both photos reconstructs the cube", () => {
+    const rng = new Random(99);
+    for(let i = 0; i < 12; i++){
+        const facelets = CubieCube.random(rng).toFacelets();
+        //Any of the three ways the model may have seen photo 2 must work.
+        const reading = readingFromFacelets(facelets, PHOTO2_CANDIDATES[i % 3]);
+        assert.equal(validatePhotoReading(reading.photos[0]), "");
+        const result = reconstruct(samplesFromReading(reading.photos[0]), samplesFromReading(reading.photos[1]));
+        assert.ok(sameCubeUpToRotation(facelets, result.facelets), `cube ${i}: ${result.message}`);
+        assert.equal(result.swapped, null);
+    }
+});
+
+test("a reading with one wrong sticker is repaired, and miscounted colours are rebalanced", () => {
+    const rng = new Random(123);
+    const facelets = CubieCube.random(rng).toFacelets();
+    const reading = readingFromFacelets(facelets);
+    //Swap two different, non-centre stickers in photo 1 (grid[0][0] of faces 0 and 1).
+    const g0 = reading.photos[0].faces[0].grid, g1 = reading.photos[0].faces[1].grid;
+    if(g0[0][0] !== g1[0][0]){
+        [g0[0][0], g1[0][0]] = [g1[0][0], g0[0][0]];
+        const result = reconstruct(samplesFromReading(reading.photos[0]), samplesFromReading(reading.photos[1]));
+        assert.ok(result.valid);
+        assert.ok(result.swapped, "expected the two stickers to be swapped back");
+        assert.ok(sameCubeUpToRotation(facelets, result.facelets));
+    }
+    //A sticker misnamed as another colour (ten of one colour, eight of another):
+    //the balanced assignment moves exactly one sticker, and validity decides which.
+    const clean = readingFromFacelets(facelets);
+    const grid = clean.photos[1].faces[2].grid;
+    const original = grid[0][2];
+    grid[0][2] = original === "white" ? "yellow" : "white";
+    const result = reconstruct(samplesFromReading(clean.photos[0]), samplesFromReading(clean.photos[1]));
+    assert.ok(result.valid, result.message);
+    assert.ok(sameCubeUpToRotation(facelets, result.facelets));
+    assert.equal(validatePhotoReading({faces: [{grid: [["pink", "white", "white"], ["white"] , []]}]}), "expected three faces");
 });
 
 test("the JavaScript solver matches the C++ solver move for move", () => {

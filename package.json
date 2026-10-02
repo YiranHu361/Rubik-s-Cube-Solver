@@ -1,0 +1,9 @@
+{
+  "name": "rubiks-cube-solver-site",
+  "private": true,
+  "type": "module",
+  "description": "Static site for the 3x3 two-phase solver plus one serverless function that reads cube photos with Claude.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0"
+  }
+}

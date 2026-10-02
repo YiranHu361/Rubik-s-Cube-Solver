@@ -24,7 +24,7 @@ function moduleBlock(name){
     return `const __m_${name} = (() => {\n${code}\nreturn {${[...new Set(exports)].join(", ")}};\n})();\n`;
 }
 
-const appModules = ["solver", "geometry", "render", "vision", "cube3d", "app"];
+const appModules = ["solver", "geometry", "render", "vision", "aiRead", "cube3d", "app"];
 const appCode = appModules.map(moduleBlock).join("\n");
 
 //The worker is a classic script: solver module block plus the worker body.

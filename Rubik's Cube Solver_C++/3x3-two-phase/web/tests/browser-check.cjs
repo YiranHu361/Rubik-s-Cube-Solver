@@ -74,7 +74,19 @@ function pngDataUrl(image){
         navigator.mediaDevices.enumerateDevices = async () => [{kind: "videoinput", deviceId: "fake"}];
     });
 
-    await page.goto(pathToFileURL(path.join(here, "..", "dist", "index.html")).href);
+    //Serve dist/ over http so the page's fetch("api/read-cube") can be routed.
+    const fs = require("node:fs");
+    const http = require("node:http");
+    const server = http.createServer((req, res) => {
+        if(req.url === "/favicon.ico"){ res.writeHead(204); res.end(); return; }
+        const file = path.join(here, "..", "dist", req.url === "/" ? "index.html" : req.url.split("?")[0]);
+        if(!fs.existsSync(file)){ res.writeHead(404); res.end("not found"); return; }
+        res.writeHead(200, {"Content-Type": file.endsWith(".html") ? "text/html" : "application/octet-stream"});
+        res.end(fs.readFileSync(file));
+    });
+    await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+    const baseUrl = `http://127.0.0.1:${server.address().port}/`;
+    await page.goto(baseUrl + "index.html");
     await page.waitForFunction(() => /Found \d+ moves/.test(document.getElementById("solver-status").textContent), null, {timeout: 60000});
 
     async function take(index, url){
@@ -102,9 +114,22 @@ function pngDataUrl(image){
     await page.click("#photo-cancel-1");
     await page.waitForSelector("#photo-card-1.has-photo:not(.capturing)");
     console.log("after cancel:", await page.textContent("#photo-badge-1"));
+    //Read with AI, against a mocked server that answers like a perfect model
+    //(the real function is api/read-cube.js; see tests/api.test.js).
+    const {readingFromFacelets} = await import(pathToFileURL(path.join(here, "..", "aiRead.js")).href);
+    let request = null;
+    await page.route("**/api/read-cube", async route => {
+        request = JSON.parse(route.request().postData());
+        await route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({...readingFromFacelets(facelets), model: "mock"})});
+    });
+    await page.click("#ai-button");
+    await page.waitForFunction(() => /^Read with AI: |failed|needs the hosted/.test(document.getElementById("net-message").textContent), null, {timeout: 20000});
+    const aiMessage = await page.textContent("#net-message");
+    console.log("ai:", aiMessage, "| sent", request ? `${request.photos.length} photos, ${request.photos[0].mediaType}, ${Math.round(request.photos[0].data.length / 1024)} KB each` : "nothing");
     await page.screenshot({path: path.join(here, "..", "dist", "check-page.png"), fullPage: true});
     console.log("errors:", errors.length ? errors.join("\n") : "none");
     await browser.close();
-    const ok = message.startsWith("Valid cube") && errors.length === 0;
+    server.close();
+    const ok = message.startsWith("Valid cube") && aiMessage.includes("Valid cube") && errors.length === 0;
     process.exit(ok ? 0 : 1);
 })().catch(err => { console.error(err); process.exit(1); });

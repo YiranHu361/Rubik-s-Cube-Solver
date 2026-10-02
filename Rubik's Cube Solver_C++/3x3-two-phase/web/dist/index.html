@@ -297,7 +297,11 @@ footer a{color:var(--accent)}
                 <p class="message info" id="net-message">Add two photos, or use the sample photos.</p>
                 <div class="palette" id="palette"></div>
                 <p class="small">Every colour must appear exactly nine times, each corner and edge piece exactly once, and the twists and flips must add up. The message above says which rule fails.</p>
-                <div><button type="button" id="reread-button">Read the photos again</button></div>
+                <div class="toolbar">
+                    <button type="button" id="ai-button" class="primary" disabled>Read with AI</button>
+                    <button type="button" id="reread-button">Read the photos again</button>
+                </div>
+                <p class="small">Read with AI sends the two photos to Claude, which reads the 54 stickers from any angle, no outline needed. About two cents per read; only the photos leave your device, and only when you press it.</p>
             </div>
         </div>
     </div>
@@ -2612,6 +2616,109 @@ function segmentBrightness(image, a, b){
 return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, guideKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
 })();
 
+const __m_aiRead = (() => {
+//Reading the stickers with a vision language model.
+//
+//The page sends both photos to /api/read-cube (api/read-cube.js at the repo
+//root, a Vercel function that calls Claude with a JSON schema). The reply
+//gives, for each photo, the three visible faces clockwise from the topmost
+//one, each as a 3x3 grid of colour names, plus a rough guess of the seven
+//corners. This module turns that reading into the same "samples" that
+//sampleFaces() produces, so reconstruct(), the validity checks, the repair
+//and the net all stay exactly the same.
+//
+//Grid convention, shared with the prompt in api/read-cube.js: grid[0][0] is
+//the sticker touching the near corner (where the three faces meet); the
+//first index grows along the edge shared with the next face clockwise, the
+//second along the edge shared with the previous face. That is the
+//photo-relative grid of geometry.js (qrow, qcol).
+const {faceQuads, normalizeRing, topFaceOrder, homography, QUAD_GRID} = __m_geometry;
+const {STICKER_RGB} = __m_render;
+const {hexagonToKeypoints, sampleFaceletIndex, PHOTO2_CANDIDATES} = __m_vision;
+const {FACE_NAMES} = __m_solver;
+const COLOUR_NAMES = ["white", "yellow", "red", "orange", "green", "blue"];
+//Display colour per name, and a stand-in for the Lab colour: six points far
+//apart, so the balanced grouping and the repair simply count how many
+//stickers they have to move.
+const NAME_RGB = {white: STICKER_RGB.U, yellow: STICKER_RGB.D, red: STICKER_RGB.R, orange: STICKER_RGB.L, green: STICKER_RGB.F, blue: STICKER_RGB.B};
+const NAME_VECTOR = {white: [100, 0, 0], yellow: [0, 100, 0], red: [0, 0, 100], orange: [-100, 0, 0], green: [0, -100, 0], blue: [0, 0, -100]};
+//Standard colour scheme, used when simulating a reading from a facelet string.
+const LETTER_NAME = {U: "white", R: "red", F: "green", D: "yellow", L: "orange", B: "blue"};
+
+//Checks one photo's reading. Returns "" when usable, else what is wrong.
+function validatePhotoReading(reading){
+    if(!reading || !Array.isArray(reading.faces) || reading.faces.length !== 3) return "expected three faces";
+    for(const face of reading.faces){
+        if(!face || !Array.isArray(face.grid) || face.grid.length !== 3) return "each face needs a 3x3 grid";
+        for(const row of face.grid){
+            if(!Array.isArray(row) || row.length !== 3) return "each face needs a 3x3 grid";
+            for(const name of row) if(!COLOUR_NAMES.includes(name)) return `unknown colour "${name}"`;
+        }
+    }
+    const c = reading.corners;
+    if(c !== undefined && c !== null){
+        const point = p => Array.isArray(p) && p.length === 2 && p.every(v => typeof v === "number" && v >= 0 && v <= 1);
+        if(!point(c.near) || !Array.isArray(c.outer) || c.outer.length !== 6 || !c.outer.every(point)) return "corners must be seven points with coordinates between 0 and 1";
+    }
+    return "";
+}
+
+//Keypoints in pixels from the model's rough corners, refined on the image
+//(hexagonToKeypoints finds the near corner along the dark gap lines and
+//works out which outline corners are joined to it).
+function keypointsFromCorners(corners, image){
+    const hex = corners.outer.map(([x, y]) => [x * image.width, y * image.height]);
+    return hexagonToKeypoints(hex, image);
+}
+
+//Builds what sampleFaces() returns from a reading. With keypoints, each
+//face also gets the homography the page uses to draw the colour discs.
+function samplesFromReading(reading, keypoints = null){
+    let quads = null, order = [0, 1, 2];
+    if(keypoints){
+        const kp = normalizeRing(keypoints);
+        quads = faceQuads(kp);
+        order = topFaceOrder(kp);
+    }
+    const faces = reading.faces.map((face, k) => {
+        const quad = quads ? quads[order[k]] : null;
+        const H = quad ? homography(QUAD_GRID, quad) : null;
+        const stickers = [];
+        for(let qrow = 0; qrow < 3; qrow++){
+            for(let qcol = 0; qcol < 3; qcol++){
+                const name = face.grid[qrow][qcol];
+                stickers.push({rgb: NAME_RGB[name], lab: NAME_VECTOR[name], qrow, qcol, name});
+            }
+        }
+        return {quad, H, stickers};
+    });
+    return {order, faces};
+}
+
+//What a perfect reading of a cube would look like, for tests and the
+//browser check: photo 1 shows U, R, F clockwise from the top; photo 2 shows
+//the other three faces in the given cyclic order.
+function readingFromFacelets(facelets, photo2Faces = PHOTO2_CANDIDATES[0]){
+    const photos = [];
+    for(let p = 0; p < 2; p++){
+        const faces = [];
+        for(let k = 0; k < 3; k++){
+            const grid = [[], [], []];
+            for(let q = 0; q < 9; q++){
+                const idx = sampleFaceletIndex(p, k, q, photo2Faces);
+                grid[Math.floor(q / 3)].push(LETTER_NAME[facelets[idx]]);
+            }
+            faces.push({position: ["top", "lower_right", "lower_left"][k], grid});
+        }
+        photos.push({faces, corners: null});
+    }
+    return {photos};
+}
+
+
+return {COLOUR_NAMES, validatePhotoReading, keypointsFromCorners, samplesFromReading, readingFromFacelets, FACE_NAMES};
+})();
+
 const __m_cube3d = (() => {
 //The animated 3D cube: draws the cube on a 2D canvas with the painter's
 //algorithm (cubePolygons sorts the little boxes far to near) and animates
@@ -2737,6 +2844,7 @@ const {faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, QUAD
 const {renderCornerPhoto, STICKER_RGB} = __m_render;
 const {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, guideKeypoints, PHOTO1_FACES, sampleFaceletIndex} = __m_vision;
 const {CubeView} = __m_cube3d;
+const {samplesFromReading, keypointsFromCorners, validatePhotoReading} = __m_aiRead;
 const $ = id => document.getElementById(id);
 
 const state = {
@@ -2871,6 +2979,7 @@ function drawPhoto(index){
     //Sampled sticker colours, as small discs where the stickers are read.
     if(photo.samples){
         photo.samples.faces.forEach(face => {
+            if(!face.H) return;
             face.stickers.forEach(st => {
                 const [x, y] = applyHomography(face.H, st.qcol + 0.5, st.qrow + 0.5);
                 ctx.beginPath();
@@ -3226,6 +3335,7 @@ function drawGuide(index, samples){
 //The sticky stepper shows what each step is waiting for.
 function updateStepper(){
     const photos = state.photos.filter(Boolean).length;
+    $("ai-button").disabled = photos < 2;
     const valid = state.facelets ? CubieCube.fromFacelets(state.facelets).verify() === "" : false;
     const solved = Boolean(state.solution);
     setStep(1, photos === 2 ? "done" : "current", photos === 2 ? "2 of 2 read" : `${photos} of 2`);
@@ -3278,7 +3388,12 @@ function rebuildFromPhotos(){
         setMessage("The points of a photo overlap. Drag them onto the cube's corners.", "bad");
         return;
     }
-    const result = reconstruct(a.samples, b.samples);
+    applyReconstruction(reconstruct(a.samples, b.samples), "");
+}
+
+//Shows a reconstruction (local or AI) in the net, the photos and the 3D cube.
+function applyReconstruction(result, prefix){
+    const [a, b] = state.photos;
     a.naming = PHOTO1_FACES;
     b.naming = result.photo2Faces;
     state.facelets = result.facelets;
@@ -3289,7 +3404,7 @@ function rebuildFromPhotos(){
     drawPhoto(1);
     renderNet();
     renderPalette();
-    setMessage(result.message, result.valid ? (result.swapped ? "warn" : "good") : "bad");
+    setMessage(prefix + result.message, result.valid ? (result.swapped ? "warn" : "good") : "bad");
     if(result.swapped){
         highlightSwapped(result);
     }
@@ -3297,6 +3412,61 @@ function rebuildFromPhotos(){
     cubeView.setPalette(currentPalette());
     cubeView.setFacelets(state.facelets);
     updateStepper();
+}
+
+//---- reading with a vision model -------------------------------------------
+
+//JPEG of a photo, downscaled, as base64 without the data URL prefix.
+function photoToJpeg(image, maxSide = 800){
+    const s = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const w = Math.max(1, Math.round(image.width * s)), h = Math.max(1, Math.round(image.height * s));
+    const src = document.createElement("canvas");
+    src.width = image.width; src.height = image.height;
+    src.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+    const out = document.createElement("canvas");
+    out.width = w; out.height = h;
+    out.getContext("2d").drawImage(src, 0, 0, w, h);
+    return {data: out.toDataURL("image/jpeg", 0.85).split(",")[1], mediaType: "image/jpeg"};
+}
+
+async function readWithAi(){
+    const [a, b] = state.photos;
+    if(!a || !b) return;
+    const button = $("ai-button");
+    button.disabled = true;
+    setMessage("Reading the stickers with AI, this takes a few seconds...", "info");
+    try{
+        const response = await fetch("api/read-cube", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({photos: [photoToJpeg(a.image), photoToJpeg(b.image)]})
+        });
+        let reply = null;
+        try{ reply = await response.json(); }catch(err){ reply = null; }
+        if(!response.ok || !reply || !Array.isArray(reply.photos)){
+            const why = reply && reply.error ? reply.error : `the server answered ${response.status}`;
+            throw new Error(why);
+        }
+        const samples = [];
+        for(let p = 0; p < 2; p++){
+            const reading = reply.photos[p];
+            const problem = validatePhotoReading(reading);
+            if(problem) throw new Error("the reply was incomplete (" + problem + ")");
+            const photo = state.photos[p];
+            if(reading.corners){
+                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }catch(err){ /* keep the current points */ }
+            }
+            photo.samples = samplesFromReading(reading, photo.keypoints);
+            samples.push(photo.samples);
+        }
+        applyReconstruction(reconstruct(samples[0], samples[1]), "Read with AI: ");
+    }catch(err){
+        const text = String(err && err.message || err);
+        const offline = /fetch|NetworkError|Failed to fetch|answered 404/.test(text);
+        setMessage(offline ? "Read with AI needs the hosted site (the page could not reach its server)." : "Read with AI failed: " + text, "bad");
+    }finally{
+        button.disabled = !(state.photos[0] && state.photos[1]);
+    }
 }
 
 function highlightSwapped(result){
@@ -3563,6 +3733,7 @@ function init(){
     }
     $("sample-button").addEventListener("click", () => useSamplePhotos((Date.now() % 100000) + 1));
     $("reread-button").addEventListener("click", rebuildFromPhotos);
+    $("ai-button").addEventListener("click", readWithAi);
     $("solve-button").addEventListener("click", solve);
     $("play-button").addEventListener("click", play);
     $("step-back").addEventListener("click", stepBack);

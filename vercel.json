@@ -1,7 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "echo nothing to install",
+  "installCommand": "npm install",
   "buildCommand": "cd \"Rubik's Cube Solver_C++/3x3-two-phase/web\" && node bundle.mjs && mkdir -p ../../../public && cp dist/index.html ../../../public/index.html",
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "functions": {
+    "api/read-cube.js": {
+      "maxDuration": 60
+    }
+  }
 }

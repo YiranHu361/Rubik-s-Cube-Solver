@@ -4,6 +4,7 @@ import {faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, QUA
 import {renderCornerPhoto, STICKER_RGB} from "./render.js";
 import {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, guideKeypoints, PHOTO1_FACES, sampleFaceletIndex} from "./vision.js";
 import {CubeView} from "./cube3d.js";
+import {samplesFromReading, keypointsFromCorners, validatePhotoReading} from "./aiRead.js";
 
 const $ = id => document.getElementById(id);
 
@@ -139,6 +140,7 @@ function drawPhoto(index){
     //Sampled sticker colours, as small discs where the stickers are read.
     if(photo.samples){
         photo.samples.faces.forEach(face => {
+            if(!face.H) return;
             face.stickers.forEach(st => {
                 const [x, y] = applyHomography(face.H, st.qcol + 0.5, st.qrow + 0.5);
                 ctx.beginPath();
@@ -494,6 +496,7 @@ function drawGuide(index, samples){
 //The sticky stepper shows what each step is waiting for.
 function updateStepper(){
     const photos = state.photos.filter(Boolean).length;
+    $("ai-button").disabled = photos < 2;
     const valid = state.facelets ? CubieCube.fromFacelets(state.facelets).verify() === "" : false;
     const solved = Boolean(state.solution);
     setStep(1, photos === 2 ? "done" : "current", photos === 2 ? "2 of 2 read" : `${photos} of 2`);
@@ -546,7 +549,12 @@ function rebuildFromPhotos(){
         setMessage("The points of a photo overlap. Drag them onto the cube's corners.", "bad");
         return;
     }
-    const result = reconstruct(a.samples, b.samples);
+    applyReconstruction(reconstruct(a.samples, b.samples), "");
+}
+
+//Shows a reconstruction (local or AI) in the net, the photos and the 3D cube.
+function applyReconstruction(result, prefix){
+    const [a, b] = state.photos;
     a.naming = PHOTO1_FACES;
     b.naming = result.photo2Faces;
     state.facelets = result.facelets;
@@ -557,7 +565,7 @@ function rebuildFromPhotos(){
     drawPhoto(1);
     renderNet();
     renderPalette();
-    setMessage(result.message, result.valid ? (result.swapped ? "warn" : "good") : "bad");
+    setMessage(prefix + result.message, result.valid ? (result.swapped ? "warn" : "good") : "bad");
     if(result.swapped){
         highlightSwapped(result);
     }
@@ -565,6 +573,61 @@ function rebuildFromPhotos(){
     cubeView.setPalette(currentPalette());
     cubeView.setFacelets(state.facelets);
     updateStepper();
+}
+
+//---- reading with a vision model -------------------------------------------
+
+//JPEG of a photo, downscaled, as base64 without the data URL prefix.
+function photoToJpeg(image, maxSide = 800){
+    const s = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const w = Math.max(1, Math.round(image.width * s)), h = Math.max(1, Math.round(image.height * s));
+    const src = document.createElement("canvas");
+    src.width = image.width; src.height = image.height;
+    src.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(image.data), image.width, image.height), 0, 0);
+    const out = document.createElement("canvas");
+    out.width = w; out.height = h;
+    out.getContext("2d").drawImage(src, 0, 0, w, h);
+    return {data: out.toDataURL("image/jpeg", 0.85).split(",")[1], mediaType: "image/jpeg"};
+}
+
+async function readWithAi(){
+    const [a, b] = state.photos;
+    if(!a || !b) return;
+    const button = $("ai-button");
+    button.disabled = true;
+    setMessage("Reading the stickers with AI, this takes a few seconds...", "info");
+    try{
+        const response = await fetch("api/read-cube", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({photos: [photoToJpeg(a.image), photoToJpeg(b.image)]})
+        });
+        let reply = null;
+        try{ reply = await response.json(); }catch(err){ reply = null; }
+        if(!response.ok || !reply || !Array.isArray(reply.photos)){
+            const why = reply && reply.error ? reply.error : `the server answered ${response.status}`;
+            throw new Error(why);
+        }
+        const samples = [];
+        for(let p = 0; p < 2; p++){
+            const reading = reply.photos[p];
+            const problem = validatePhotoReading(reading);
+            if(problem) throw new Error("the reply was incomplete (" + problem + ")");
+            const photo = state.photos[p];
+            if(reading.corners){
+                try{ photo.keypoints = keypointsFromCorners(reading.corners, photo.image); }catch(err){ /* keep the current points */ }
+            }
+            photo.samples = samplesFromReading(reading, photo.keypoints);
+            samples.push(photo.samples);
+        }
+        applyReconstruction(reconstruct(samples[0], samples[1]), "Read with AI: ");
+    }catch(err){
+        const text = String(err && err.message || err);
+        const offline = /fetch|NetworkError|Failed to fetch|answered 404/.test(text);
+        setMessage(offline ? "Read with AI needs the hosted site (the page could not reach its server)." : "Read with AI failed: " + text, "bad");
+    }finally{
+        button.disabled = !(state.photos[0] && state.photos[1]);
+    }
 }
 
 function highlightSwapped(result){
@@ -831,6 +894,7 @@ function init(){
     }
     $("sample-button").addEventListener("click", () => useSamplePhotos((Date.now() % 100000) + 1));
     $("reread-button").addEventListener("click", rebuildFromPhotos);
+    $("ai-button").addEventListener("click", readWithAi);
     $("solve-button").addEventListener("click", solve);
     $("play-button").addEventListener("click", play);
     $("step-back").addEventListener("click", stepBack);
