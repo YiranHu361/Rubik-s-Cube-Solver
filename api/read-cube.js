@@ -84,21 +84,31 @@ export async function readCube(photos, client = new Anthropic()){
         content.push({type: "image", source: {type: "base64", media_type: photo.mediaType, data: photo.data}});
     });
     content.push({type: "text", text: INSTRUCTIONS});
+    //Thinking tokens count against max_tokens, so leave plenty of room; low
+    //effort keeps a perception task well inside the function's time limit.
     const response = await client.beta.messages.create({
         model: MODEL,
-        max_tokens: 4000,
+        max_tokens: 16000,
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        output_config: {format: {type: "json_schema", schema: READING_SCHEMA}},
+        output_config: {effort: "low", format: {type: "json_schema", schema: READING_SCHEMA}},
         messages: [{role: "user", content}]
     });
     if(response.stop_reason === "refusal"){
         const why = response.stop_details && response.stop_details.explanation;
         throw new Error("The model declined to read these photos" + (why ? ": " + why : "."));
     }
+    if(response.stop_reason === "max_tokens") throw new Error("The model's answer was cut off (max_tokens).");
     const text = response.content.filter(b => b.type === "text").map(b => b.text).join("");
     let reading;
-    try{ reading = JSON.parse(text); }catch(err){ throw new Error("The model's answer was not valid JSON."); }
+    try{
+        reading = JSON.parse(text);
+    }catch(err){
+        //Be forgiving about anything around the JSON object.
+        const start = text.indexOf("{"), end = text.lastIndexOf("}");
+        try{ reading = JSON.parse(text.slice(start, end + 1)); }
+        catch(err2){ throw new Error(`The model's answer was not valid JSON (stop_reason ${response.stop_reason}, ${text.length} chars: ${text.slice(0, 160)})`); }
+    }
     const problem = validateReading(reading);
     if(problem) throw new Error("The model's answer was incomplete: " + problem);
     return {photos: reading.photos, model: response.model, usage: response.usage};
