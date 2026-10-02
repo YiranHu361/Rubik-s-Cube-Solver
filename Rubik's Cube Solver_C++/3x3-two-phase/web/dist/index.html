@@ -1,0 +1,3311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two Corner Cube Solver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/*Layout: a workbench ledger. A sticky stepper tracks the three steps; each
+  step is a row with its number and name in a narrow left column and the
+  working area on the right; one column on phones.*/
+:root{
+    --bg:#ECEEF2; --surface:#FFFFFF; --ink:#15191F; --muted:#5B6470; --line:#CBD1DA;
+    --accent:#D8156F; --accent-ink:#FFFFFF; --good:#157A4C; --warn:#B86E00; --bad:#C62828;
+    --plate:#15191F;
+    --display:"Syne", "Arial Black", sans-serif;
+    --body:"IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono:"IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+        --bg:#121519; --surface:#1B2027; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2E353E;
+        --accent:#FF4FA3; --accent-ink:#15191F; --good:#4CC38A; --warn:#F2B04A; --bad:#FF6B6B;
+        --plate:#0B0D10; color-scheme:dark;
+    }
+}
+:root[data-theme="dark"]{
+    --bg:#121519; --surface:#1B2027; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2E353E;
+    --accent:#FF4FA3; --accent-ink:#15191F; --good:#4CC38A; --warn:#F2B04A; --bad:#FF6B6B;
+    --plate:#0B0D10; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+    background:var(--bg); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.5;
+    padding-block:0 48px; padding-inline:16px;
+}
+.wrap{max-width:1120px; margin:0 auto}
+header.hero{padding-block:36px 24px; display:grid; gap:12px}
+h1{
+    font-family:var(--display); font-weight:800; font-size:clamp(2.6rem, 8vw, 5.4rem); line-height:0.95;
+    letter-spacing:-0.02em; margin:0; text-wrap:balance;
+}
+h1 em{font-style:normal; color:var(--accent)}
+.lede{max-width:62ch; margin:0; color:var(--muted); font-size:1.05rem}
+.lede strong{color:var(--ink); font-weight:600}
+.toolbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+button, .filebutton{
+    font:inherit; font-weight:600; font-size:0.95rem; border:1.5px solid var(--ink); background:var(--surface); color:var(--ink);
+    padding:9px 16px; border-radius:999px; cursor:pointer; line-height:1.2;
+}
+button:hover, .filebutton:hover{border-color:var(--accent); color:var(--accent)}
+button:focus-visible, .filebutton:focus-within, .sticker:focus-visible, .swatch:focus-visible, .stepper a:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+button.primary, .filebutton.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+button.primary:hover, .filebutton.primary:hover{filter:brightness(1.08); color:var(--accent-ink)}
+button:disabled{opacity:0.45; cursor:default}
+button.linkish{border:0; background:none; padding:4px 2px; font-weight:500; color:var(--muted); text-decoration:underline; text-underline-offset:3px; border-radius:4px}
+button.linkish:hover{color:var(--accent)}
+.filebutton input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
+.filebutton{position:relative; display:inline-block}
+
+/*Progress stepper: which step is done, which is in progress, with a one-line state each.*/
+.stepper{position:sticky; top:env(safe-area-inset-top, 0px); z-index:5; background:var(--bg); display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding-block:12px 10px; border-bottom:1.5px solid var(--line)}
+.stepper a{text-decoration:none; color:var(--muted); display:grid; gap:5px; min-width:0}
+.stepper .bar{height:4px; background:var(--line); border-radius:2px}
+.stepper .done .bar{background:var(--good)}
+.stepper .current .bar{background:var(--accent)}
+.stepper .name{font-family:var(--mono); font-size:0.72rem; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.stepper .done .name::before{content:"\2713  "; color:var(--good)}
+.stepper .state{font-size:0.86rem; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.stepper .current .state{font-weight:600}
+
+.step{
+    display:grid; grid-template-columns:200px minmax(0,1fr); gap:24px; padding-block:32px; border-top:1.5px solid var(--line);
+}
+.step:first-of-type{border-top:0}
+.step-head{position:sticky; top:calc(env(safe-area-inset-top, 0px) + 70px); align-self:start; padding-top:4px}
+.step-num{font-family:var(--mono); color:var(--accent); font-size:0.85rem; letter-spacing:0.08em}
+.step h2{font-family:var(--display); font-weight:700; font-size:1.7rem; line-height:1.05; margin:4px 0 8px; letter-spacing:-0.01em; text-wrap:balance}
+.step-head p{margin:0; color:var(--muted); font-size:0.92rem}
+.step-body{min-width:0; display:grid; gap:18px; align-content:start}
+
+.photos{display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px}
+.photo-card{background:var(--surface); border:1.5px solid var(--line); padding:14px; display:grid; gap:10px; min-width:0}
+.photo-card header{padding:0; gap:4px; display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap}
+.photo-card h3{margin:0; font-family:var(--mono); font-weight:600; font-size:0.95rem}
+.badge{font-family:var(--mono); font-size:0.75rem; color:var(--muted); letter-spacing:0.04em; text-transform:uppercase}
+.photo-frame{position:relative; background:var(--plate); aspect-ratio:1; max-width:100%; overflow:hidden; border-radius:6px}
+.photo-frame canvas{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
+.photo-card:not(.has-photo) canvas{display:none}
+/*Capture guide shown before a photo exists: corner brackets, a ghost of the
+  cube silhouette with its seven points, and an instruction pill.*/
+.guide{position:absolute; inset:0; display:grid; place-items:center; color:#C9CFD8; text-align:center; padding:28px; font-size:0.9rem}
+.photo-card.has-photo .guide{display:none}
+.guide svg{width:min(60%, 180px); height:auto; margin-bottom:10px}
+.brackets{position:absolute; inset:14px; pointer-events:none}
+.brackets i{position:absolute; width:22px; height:22px; border:2.5px solid #fff; opacity:0.85}
+.brackets i:nth-child(1){left:0; top:0; border-right:0; border-bottom:0}
+.brackets i:nth-child(2){right:0; top:0; border-left:0; border-bottom:0}
+.brackets i:nth-child(3){left:0; bottom:0; border-right:0; border-top:0}
+.brackets i:nth-child(4){right:0; bottom:0; border-left:0; border-top:0}
+.photo-card.has-photo .brackets{display:none}
+.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none}
+.frame-pill.good{background:rgba(21,122,76,0.92)}
+.frame-pill.warn{background:rgba(184,110,0,0.94)}
+.frame-pill[hidden]{display:none}
+.tip{display:flex; gap:10px; align-items:flex-start; background:var(--bg); border:1.5px solid var(--line); padding:9px 12px; font-size:0.86rem; color:var(--muted); border-radius:6px; margin:0}
+.tip b{color:var(--ink); font-weight:600}
+.tip svg{flex:none; width:18px; height:18px; margin-top:2px}
+.photo-actions{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.photo-actions button, .photo-actions .filebutton{padding:8px 14px; font-size:0.9rem}
+.photo-more{display:flex; flex-wrap:wrap; gap:14px}
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:0.82rem; color:var(--muted); font-family:var(--mono)}
+.legend i{display:inline-block; width:10px; height:10px; border-radius:50%; border:1.5px solid #000; vertical-align:-1px; margin-right:5px}
+
+.net-wrap{display:grid; grid-template-columns:minmax(0, 1fr); gap:18px}
+@media (min-width:860px){.net-wrap{grid-template-columns:minmax(0, 440px) minmax(0,1fr); align-items:start}}
+.net{display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(3, 1fr); gap:6px; background:var(--plate); padding:8px; width:440px; max-width:100%; aspect-ratio:4/3; border-radius:6px}
+.net-face{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:3px}
+.sticker{padding:0; border:0; border-radius:3px; min-width:0; font-family:var(--mono); font-weight:600; font-size:0.9rem; color:rgba(0,0,0,0.75); cursor:pointer}
+.sticker:hover{outline:2px solid #fff}
+.sticker.centre{cursor:default; color:#fff; text-shadow:0 0 3px rgba(0,0,0,0.9), 0 0 1px #000}
+.sticker.swapped{outline:3px dashed var(--accent); outline-offset:-3px}
+.net-side{display:grid; gap:12px; align-content:start}
+.palette{display:flex; gap:8px; flex-wrap:wrap}
+.swatch{width:44px; height:44px; padding:0; border-radius:8px; border:2px solid transparent; font-family:var(--mono); font-weight:600; color:rgba(0,0,0,0.7)}
+.swatch.selected{border-color:var(--ink); box-shadow:0 0 0 3px var(--surface), 0 0 0 5px var(--ink)}
+.message{margin:0; padding:10px 14px; border-left:4px solid var(--line); background:var(--surface); font-size:0.95rem}
+.message.good{border-color:var(--good)}
+.message.warn{border-color:var(--warn)}
+.message.bad{border-color:var(--bad)}
+.message.info{border-color:var(--line)}
+.small{color:var(--muted); font-size:0.88rem; margin:0}
+
+.solve-top{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+#solver-status{font-family:var(--mono); font-size:0.85rem; color:var(--muted)}
+.result{display:grid; grid-template-columns:minmax(0,1fr); gap:18px}
+@media (min-width:860px){.result{grid-template-columns:minmax(0,1fr) 320px}}
+.cube-stage{background:var(--plate); border-radius:6px; aspect-ratio:1; max-width:100%; width:min(100%, 440px); position:relative}
+.cube-stage canvas{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
+.cube-stage .corner-note{position:absolute; left:10px; bottom:8px; font-family:var(--mono); font-size:0.72rem; color:#9AA3AF}
+/*The player reads like a cooking-mode screen: which move you are on, one big
+  move at a time, previous and next as the main controls.*/
+.player{display:grid; gap:12px; align-content:start; background:var(--surface); border:1.5px solid var(--line); padding:16px}
+.player-top{display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:0.85rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.player-top b{color:var(--ink); font-weight:600}
+.segments{display:flex; gap:3px}
+.segments i{flex:1; height:6px; background:var(--line); border-radius:3px}
+.segments i.done{background:var(--accent)}
+.segments i.current{background:var(--ink)}
+.now{display:grid; gap:2px; padding-block:6px}
+.now-move{font-family:var(--display); font-weight:800; font-size:4.6rem; line-height:1; letter-spacing:-0.02em}
+.now-desc{color:var(--muted); font-size:0.95rem}
+.controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.controls button{padding:8px 14px; font-size:0.9rem}
+.speed{display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--muted); font-family:var(--mono)}
+.speed input{width:110px; accent-color:var(--accent)}
+details.all-moves summary{cursor:pointer; font-size:0.9rem; color:var(--muted); font-weight:500}
+.moves{display:flex; flex-wrap:wrap; gap:6px; padding-top:10px}
+.move{font-family:var(--mono); font-weight:600; padding:5px 9px; border-radius:6px; border:1.5px solid var(--line); background:var(--bg); min-width:40px; font-size:0.9rem}
+.move.done{opacity:0.4}
+.move.next{border-color:var(--accent); color:var(--accent)}
+
+footer{border-top:1.5px solid var(--line); padding-top:20px; color:var(--muted); font-size:0.88rem; max-width:70ch}
+footer a{color:var(--accent)}
+@media (max-width:760px){
+    .step{grid-template-columns:1fr; gap:12px}
+    .step-head{position:static}
+    .stepper .state{font-size:0.8rem}
+    .now-move{font-size:3.6rem}
+}
+@media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+    <h1>Two photos.<br>One <em>corner</em> each.</h1>
+    <p class="lede">Photograph a scrambled cube from one corner, then from the opposite corner. That covers all six faces. The page reads the 54 stickers, checks they make a real cube, and finds a solution of about 20 turns with a two-phase search running in your browser. <strong>Nothing is uploaded.</strong></p>
+    <div class="toolbar">
+        <button type="button" id="sample-button" class="primary">New sample scramble</button>
+        <span class="small">Sample photos are synthetic renders, marked as such. Replace them with your own.</span>
+    </div>
+</header>
+
+<nav class="stepper" aria-label="Progress">
+    <a href="#step-photos" id="stepper-1" class="current"><span class="bar"></span><span class="name">1 Photos</span><span class="state" id="stepper-state-1">0 of 2</span></a>
+    <a href="#step-stickers" id="stepper-2"><span class="bar"></span><span class="name">2 Stickers</span><span class="state" id="stepper-state-2">Waiting for photos</span></a>
+    <a href="#step-solve" id="stepper-3"><span class="bar"></span><span class="name">3 Solution</span><span class="state" id="stepper-state-3">Not yet</span></a>
+</nav>
+
+<section class="step" id="step-photos">
+    <div class="step-head">
+        <div class="step-num">STEP 1 OF 3</div>
+        <h2>Photograph both corners</h2>
+        <p>Drag the seven points onto the cube's corners if the guess is off: the ring goes on the corner nearest the camera, the dots on the six outer corners.</p>
+    </div>
+    <div class="step-body">
+        <div class="photos">
+            <div class="photo-card" id="photo-card-0">
+                <header><h3>Photo 1 · top corner</h3><span class="badge" id="photo-badge-0">empty</span></header>
+                <div class="photo-frame">
+                    <canvas id="photo-canvas-0" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <div class="brackets"><i></i><i></i><i></i><i></i></div>
+                    <div class="guide"><div>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <div>Top face plus the two faces below it, filling about two thirds of the frame</div>
+                    </div></div>
+                    <div class="frame-pill" id="photo-status-0">Point one corner at the camera</div>
+                </div>
+                <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2V16h6v-.5c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg><span><b>Even light, no glare.</b> Daylight from the side works best; a lamp straight above washes out the top face.</span></p>
+                <p class="photo-hint" id="photo-hint-0" hidden></p>
+                <div class="photo-actions">
+                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-0" accept="image/*" capture="environment"></label>
+                    <label class="filebutton">Choose from library<input type="file" id="photo-file-0" accept="image/*"></label>
+                </div>
+                <div class="photo-more">
+                    <button type="button" class="linkish" id="photo-reset-0">Guess the points again</button>
+                    <button type="button" class="linkish" id="photo-default-0">Centre the points</button>
+                </div>
+            </div>
+            <div class="photo-card" id="photo-card-1">
+                <header><h3>Photo 2 · opposite corner</h3><span class="badge" id="photo-badge-1">empty</span></header>
+                <div class="photo-frame">
+                    <canvas id="photo-canvas-1" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <div class="brackets"><i></i><i></i><i></i><i></i></div>
+                    <div class="guide"><div>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <div>The three faces you could not see in photo 1. Any way round is fine.</div>
+                    </div></div>
+                    <div class="frame-pill" id="photo-status-1">Flip to the diagonally opposite corner</div>
+                </div>
+                <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16v16H4z M4 12h16 M12 4v16"/></svg><span><b>Keep the whole cube in frame.</b> All six outer corners must be visible; the near corner should sit near the middle.</span></p>
+                <p class="photo-hint" id="photo-hint-1" hidden></p>
+                <div class="photo-actions">
+                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-1" accept="image/*" capture="environment"></label>
+                    <label class="filebutton">Choose from library<input type="file" id="photo-file-1" accept="image/*"></label>
+                </div>
+                <div class="photo-more">
+                    <button type="button" class="linkish" id="photo-reset-1">Guess the points again</button>
+                    <button type="button" class="linkish" id="photo-default-1">Centre the points</button>
+                </div>
+            </div>
+        </div>
+        <div class="legend"><span><i style="background:#fff"></i>near corner</span><span><i style="background:#ff3d8f"></i>corner joined to it by an edge</span><span><i style="background:#ffd23f"></i>far corner of a face</span><span>discs show the colour read from each sticker</span></div>
+    </div>
+</section>
+
+<section class="step" id="step-stickers">
+    <div class="step-head">
+        <div class="step-num">STEP 2 OF 3</div>
+        <h2>Check the stickers</h2>
+        <p>The top face of photo 1 is called U; its other two faces are R and F. Pick a colour, then click any sticker the camera got wrong.</p>
+    </div>
+    <div class="step-body">
+        <div class="net-wrap">
+            <div class="net" id="net" aria-label="Unfolded cube"></div>
+            <div class="net-side">
+                <p class="message info" id="net-message">Add two photos, or use the sample photos.</p>
+                <div class="palette" id="palette"></div>
+                <p class="small">Every colour must appear exactly nine times, each corner and edge piece exactly once, and the twists and flips must add up. The message above says which rule fails.</p>
+                <div><button type="button" id="reread-button">Read the photos again</button></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="step" id="step-solve">
+    <div class="step-head">
+        <div class="step-num">STEP 3 OF 3</div>
+        <h2>Solve and follow along</h2>
+        <p>Hold the cube as in photo 1: U on top, F at the front left, R at the front right. Letters are faces, an apostrophe means anticlockwise, 2 means a half turn.</p>
+    </div>
+    <div class="step-body">
+        <div class="solve-top">
+            <button type="button" id="solve-button" class="primary">Solve</button>
+            <span id="solver-status">Starting the solver...</span>
+        </div>
+        <div class="result" id="solution" hidden>
+            <div class="cube-stage">
+                <canvas id="cube-canvas" aria-label="Animated cube"></canvas>
+                <span class="corner-note">drag to look around</span>
+            </div>
+            <div class="player">
+                <div class="player-top"><span>Move <b id="move-index">1</b> of <b id="move-count">0</b></span><span id="progress">0 done</span></div>
+                <div class="segments" id="segments" aria-hidden="true"></div>
+                <div class="now"><div class="now-move" id="current-move">R</div><div class="now-desc" id="current-move-desc">Right face, clockwise</div></div>
+                <div class="controls">
+                    <button type="button" id="step-back">&larr; Previous</button>
+                    <button type="button" id="step-forward" class="primary">Next &rarr;</button>
+                    <button type="button" id="play-button">Auto-play</button>
+                    <button type="button" id="reset-button" class="linkish">Start over</button>
+                </div>
+                <label class="speed">speed <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"> <span id="speed-label">1.0x</span></label>
+                <details class="all-moves"><summary>All moves</summary><div class="moves" id="moves"></div></details>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <p>Kociemba's two-phase algorithm, implemented in C++ and ported to JavaScript for this page. The solver tables are built in a Web Worker when the page opens. Source and benchmarks: <a href="https://github.com/YiranHu361/Rubik-s-Cube-Solver" rel="noopener">github.com/YiranHu361/Rubik-s-Cube-Solver</a>.</p>
+</footer>
+</div>
+<script type="text/plain" id="worker-source">
+const __m_solver = (() => {
+//JavaScript port of the C++ two-phase solver (src/Cube.cpp, Coords.cpp,
+//Pruning.cpp, Solver.cpp). It is a line-by-line translation with the same
+//table layouts, the same search order and the same random number generator,
+//so "cube3 vectors" from the C++ build and solveVectors() here print the
+//same move sequences. tests/solver.test.js checks exactly that.
+//
+//Runs in the browser (inside a Web Worker, see worker.js) and in Node.
+
+//---- names and tables ------------------------------------------------------
+
+const Corner = {URF: 0, UFL: 1, ULB: 2, UBR: 3, DFR: 4, DLF: 5, DBL: 6, DRB: 7};
+const Edge = {UR: 0, UF: 1, UL: 2, UB: 3, DR: 4, DF: 5, DL: 6, DB: 7, FR: 8, FL: 9, BL: 10, BR: 11};
+const Face = {U: 0, R: 1, F: 2, D: 3, L: 4, B: 5};
+const FACE_NAMES = "URFDLB";
+const {URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB} = Corner;
+const {UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR} = Edge;
+const {U, R, F, D, L, B} = Face;
+
+//Facelet index = face * 9 + row * 3 + column (see Cube.h for the layout).
+const CORNER_FACELET = [
+    [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
+    [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51]
+];
+const EDGE_FACELET = [
+    [5, 10], [7, 19], [3, 37], [1, 46], [32, 16], [28, 25],
+    [30, 43], [34, 52], [23, 12], [21, 41], [50, 39], [48, 14]
+];
+const CORNER_COLOR = [
+    [U, R, F], [U, F, L], [U, L, B], [U, B, R],
+    [D, F, R], [D, L, F], [D, B, L], [D, R, B]
+];
+const EDGE_COLOR = [
+    [U, R], [U, F], [U, L], [U, B], [D, R], [D, F],
+    [D, L], [D, B], [F, R], [F, L], [B, L], [B, R]
+];
+const CORNER_NAMES = ["URF", "UFL", "ULB", "UBR", "DFR", "DLF", "DBL", "DRB"];
+const EDGE_NAMES = ["UR", "UF", "UL", "UB", "DR", "DF", "DL", "DB", "FR", "FL", "BL", "BR"];
+
+//---- random numbers (xorshift32, identical to Random in Cube.h) ------------
+
+class Random{
+    constructor(seed){
+        this.state = (seed >>> 0) || 0x9E3779B9;
+    }
+    next(){
+        let x = this.state;
+        x ^= x << 13; x >>>= 0;
+        x ^= x >>> 17;
+        x ^= x << 5; x >>>= 0;
+        this.state = x;
+        return x;
+    }
+    nextInt(n){
+        return this.next() % n;
+    }
+}
+
+//---- cubie-level cube ------------------------------------------------------
+
+class CubieCube{
+    constructor(){
+        this.cp = [0, 1, 2, 3, 4, 5, 6, 7];
+        this.co = [0, 0, 0, 0, 0, 0, 0, 0];
+        this.ep = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        this.eo = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+
+    static make(cp, co, ep, eo){
+        const c = new CubieCube();
+        c.cp = cp.slice(); c.co = co.slice(); c.ep = ep.slice(); c.eo = eo.slice();
+        return c;
+    }
+
+    clone(){
+        return CubieCube.make(this.cp, this.co, this.ep, this.eo);
+    }
+
+    //this followed by other
+    multiply(b){
+        const r = new CubieCube();
+        for(let i = 0; i < 8; i++){
+            r.cp[i] = this.cp[b.cp[i]];
+            r.co[i] = (this.co[b.cp[i]] + b.co[i]) % 3;
+        }
+        for(let i = 0; i < 12; i++){
+            r.ep[i] = this.ep[b.ep[i]];
+            r.eo[i] = (this.eo[b.ep[i]] + b.eo[i]) % 2;
+        }
+        return r;
+    }
+
+    inverse(){
+        const r = new CubieCube();
+        for(let i = 0; i < 8; i++){
+            r.cp[this.cp[i]] = i;
+            r.co[this.cp[i]] = (3 - this.co[i]) % 3;
+        }
+        for(let i = 0; i < 12; i++){
+            r.ep[this.ep[i]] = i;
+            r.eo[this.ep[i]] = this.eo[i];
+        }
+        return r;
+    }
+
+    applyMove(move){
+        const face = Math.floor(move / 3), turns = move % 3 + 1;
+        let c = this;
+        for(let k = 0; k < turns; k++) c = c.multiply(Moves.BASIC[face]);
+        this.cp = c.cp; this.co = c.co; this.ep = c.ep; this.eo = c.eo;
+        return this;
+    }
+
+    applyMoves(moves){
+        for(const m of moves) this.applyMove(m);
+        return this;
+    }
+
+    equals(o){
+        for(let i = 0; i < 8; i++) if(this.cp[i] !== o.cp[i] || this.co[i] !== o.co[i]) return false;
+        for(let i = 0; i < 12; i++) if(this.ep[i] !== o.ep[i] || this.eo[i] !== o.eo[i]) return false;
+        return true;
+    }
+
+    isSolved(){
+        return this.equals(new CubieCube());
+    }
+
+    toFacelets(){
+        const f = new Array(54).fill("?");
+        for(let i = 0; i < 8; i++){
+            for(let n = 0; n < 3; n++){
+                f[CORNER_FACELET[i][(n + this.co[i]) % 3]] = FACE_NAMES[CORNER_COLOR[this.cp[i]][n]];
+            }
+        }
+        for(let i = 0; i < 12; i++){
+            for(let n = 0; n < 2; n++){
+                f[EDGE_FACELET[i][(n + this.eo[i]) % 2]] = FACE_NAMES[EDGE_COLOR[this.ep[i]][n]];
+            }
+        }
+        for(let face = 0; face < 6; face++) f[face * 9 + 4] = FACE_NAMES[face];
+        return f.join("");
+    }
+
+    static fromFacelets(facelets){
+        const c = new CubieCube();
+        c.cp.fill(-1); c.co.fill(0); c.ep.fill(-1); c.eo.fill(0);
+        if(typeof facelets !== "string" || facelets.length !== 54) return c;
+        const f = [];
+        for(let i = 0; i < 54; i++){
+            const face = FACE_NAMES.indexOf(facelets[i]);
+            if(face < 0) return c;
+            f.push(face);
+        }
+        for(let i = 0; i < 8; i++){
+            let ori = 0;
+            while(ori < 3 && f[CORNER_FACELET[i][ori]] !== U && f[CORNER_FACELET[i][ori]] !== D) ori++;
+            if(ori === 3) continue;
+            const col1 = f[CORNER_FACELET[i][(ori + 1) % 3]];
+            const col2 = f[CORNER_FACELET[i][(ori + 2) % 3]];
+            for(let j = 0; j < 8; j++){
+                if(col1 === CORNER_COLOR[j][1] && col2 === CORNER_COLOR[j][2]){
+                    c.cp[i] = j;
+                    c.co[i] = ori;
+                    break;
+                }
+            }
+        }
+        for(let i = 0; i < 12; i++){
+            const a = f[EDGE_FACELET[i][0]], b = f[EDGE_FACELET[i][1]];
+            for(let j = 0; j < 12; j++){
+                if(a === EDGE_COLOR[j][0] && b === EDGE_COLOR[j][1]){ c.ep[i] = j; c.eo[i] = 0; break; }
+                if(a === EDGE_COLOR[j][1] && b === EDGE_COLOR[j][0]){ c.ep[i] = j; c.eo[i] = 1; break; }
+            }
+        }
+        return c;
+    }
+
+    //"" when the cube is solvable, otherwise a short reason.
+    verify(){
+        const cornerCount = new Array(8).fill(0), edgeCount = new Array(12).fill(0);
+        for(let i = 0; i < 8; i++){
+            if(this.cp[i] < 0 || this.cp[i] > 7) return `the corner at ${CORNER_NAMES[i]} has an impossible colour combination`;
+            cornerCount[this.cp[i]]++;
+        }
+        for(let i = 0; i < 12; i++){
+            if(this.ep[i] < 0 || this.ep[i] > 11) return `the edge at ${EDGE_NAMES[i]} has an impossible colour combination`;
+            edgeCount[this.ep[i]]++;
+        }
+        for(let i = 0; i < 8; i++) if(cornerCount[i] !== 1) return `the ${CORNER_NAMES[i]} corner appears ${cornerCount[i]} times`;
+        for(let i = 0; i < 12; i++) if(edgeCount[i] !== 1) return `the ${EDGE_NAMES[i]} edge appears ${edgeCount[i]} times`;
+        let twist = 0, flip = 0;
+        for(let i = 0; i < 8; i++) twist += this.co[i];
+        for(let i = 0; i < 12; i++) flip += this.eo[i];
+        if(twist % 3 !== 0) return "one corner is twisted (total twist is not a multiple of 3)";
+        if(flip % 2 !== 0) return "one edge is flipped (an odd number of edges are flipped)";
+        if(parity(this.cp) !== parity(this.ep)) return "two pieces are swapped (corner and edge parity differ)";
+        return "";
+    }
+
+    static random(rng){
+        const c = new CubieCube();
+        for(let i = 7; i > 0; i--){
+            const j = rng.nextInt(i + 1);
+            [c.cp[i], c.cp[j]] = [c.cp[j], c.cp[i]];
+        }
+        for(let i = 11; i > 0; i--){
+            const j = rng.nextInt(i + 1);
+            [c.ep[i], c.ep[j]] = [c.ep[j], c.ep[i]];
+        }
+        if(parity(c.cp) !== parity(c.ep)) [c.ep[0], c.ep[1]] = [c.ep[1], c.ep[0]];
+        let sum = 0;
+        for(let i = 0; i < 7; i++){ c.co[i] = rng.nextInt(3); sum += c.co[i]; }
+        c.co[7] = (3 - sum % 3) % 3;
+        sum = 0;
+        for(let i = 0; i < 11; i++){ c.eo[i] = rng.nextInt(2); sum += c.eo[i]; }
+        c.eo[11] = sum % 2;
+        return c;
+    }
+}
+
+function parity(p){
+    let par = 0;
+    for(let i = 0; i < p.length; i++) for(let j = i + 1; j < p.length; j++) if(p[i] > p[j]) par ^= 1;
+    return par;
+}
+
+//---- moves -----------------------------------------------------------------
+
+const Moves = {
+    COUNT: 18,
+    BASIC: [
+        CubieCube.make([UBR, URF, UFL, ULB, DFR, DLF, DBL, DRB], [0, 0, 0, 0, 0, 0, 0, 0],
+                       [UB, UR, UF, UL, DR, DF, DL, DB, FR, FL, BL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([DFR, UFL, ULB, URF, DRB, DLF, DBL, UBR], [2, 0, 0, 1, 1, 0, 0, 2],
+                       [FR, UF, UL, UB, BR, DF, DL, DB, DR, FL, BL, UR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([UFL, DLF, ULB, UBR, URF, DFR, DBL, DRB], [1, 2, 0, 0, 2, 1, 0, 0],
+                       [UR, FL, UL, UB, DR, FR, DL, DB, UF, DF, BL, BR], [0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0]),
+        CubieCube.make([URF, UFL, ULB, UBR, DLF, DBL, DRB, DFR], [0, 0, 0, 0, 0, 0, 0, 0],
+                       [UR, UF, UL, UB, DF, DL, DB, DR, FR, FL, BL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([URF, ULB, DBL, UBR, DFR, UFL, DLF, DRB], [0, 1, 2, 0, 0, 2, 1, 0],
+                       [UR, UF, BL, UB, DR, DF, FL, DB, FR, UL, DL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([URF, UFL, UBR, DRB, DFR, DLF, ULB, DBL], [0, 0, 1, 2, 0, 0, 2, 1],
+                       [UR, UF, UL, BR, DR, DF, DL, BL, FR, FL, UB, DB], [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1])
+    ],
+    name(move){
+        return FACE_NAMES[Math.floor(move / 3)] + ["", "2", "'"][move % 3];
+    },
+    parse(token){
+        if(!token || token.length > 2) return -1;
+        const face = FACE_NAMES.indexOf(token[0]);
+        if(face < 0) return -1;
+        let power = 0;
+        if(token.length === 2){
+            if(token[1] === "2") power = 1;
+            else if(token[1] === "'") power = 2;
+            else return -1;
+        }
+        return face * 3 + power;
+    },
+    inverse(move){
+        return Math.floor(move / 3) * 3 + (2 - move % 3);
+    },
+    isPhase2(move){
+        const face = Math.floor(move / 3);
+        return face === U || face === D || move % 3 === 1;
+    },
+    parseSequence(text){
+        return String(text).split(/\s+/).map(t => Moves.parse(t)).filter(m => m >= 0);
+    },
+    toString(moves){
+        return moves.map(m => Moves.name(m)).join(" ");
+    }
+};
+
+//---- facelet helpers -------------------------------------------------------
+
+const SAME = 0, CW = 1, HALF = 2, CCW = 3;
+function spinIndex(spin, row, col){
+    switch(spin){
+        case CW: return (2 - col) * 3 + row;
+        case HALF: return (2 - row) * 3 + (2 - col);
+        case CCW: return col * 3 + (2 - row);
+        default: return row * 3 + col;
+    }
+}
+
+const ROTATIONS = {
+    x: {from: [F, R, D, B, L, U], spin: [SAME, CW, SAME, HALF, CCW, HALF]},
+    y: {from: [U, B, R, D, F, L], spin: [CW, SAME, SAME, CCW, SAME, SAME]},
+    z: {from: [L, U, F, R, D, B], spin: [CW, CW, CW, CW, CW, CCW]}
+};
+
+const SIDE_STRIPS = [
+    [[18, 19, 20], [36, 37, 38], [45, 46, 47], [9, 10, 11]],
+    [[20, 23, 26], [2, 5, 8], [51, 48, 45], [29, 32, 35]],
+    [[6, 7, 8], [9, 12, 15], [29, 28, 27], [44, 41, 38]],
+    [[24, 25, 26], [15, 16, 17], [51, 52, 53], [42, 43, 44]],
+    [[0, 3, 6], [18, 21, 24], [27, 30, 33], [53, 50, 47]],
+    [[2, 1, 0], [36, 39, 42], [33, 34, 35], [17, 14, 11]]
+];
+
+const Facelets = {
+    SOLVED: "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+    rotate(facelets, axis){
+        const {from, spin} = ROTATIONS[axis];
+        const out = new Array(54);
+        for(let face = 0; face < 6; face++){
+            for(let row = 0; row < 3; row++){
+                for(let col = 0; col < 3; col++){
+                    out[face * 9 + row * 3 + col] = facelets[from[face] * 9 + spinIndex(spin[face], row, col)];
+                }
+            }
+        }
+        return out.join("");
+    },
+    relabelByCentres(facelets){
+        const map = {};
+        for(let face = 0; face < 6; face++) map[facelets[face * 9 + 4]] = FACE_NAMES[face];
+        return Array.from(facelets, ch => map[ch] || "?").join("");
+    },
+    applyMove(facelets, move){
+        const face = Math.floor(move / 3), turns = move % 3 + 1;
+        let cur = facelets.split("");
+        for(let t = 0; t < turns; t++){
+            const next = cur.slice();
+            for(let row = 0; row < 3; row++){
+                for(let col = 0; col < 3; col++){
+                    next[face * 9 + row * 3 + col] = cur[face * 9 + spinIndex(CW, row, col)];
+                }
+            }
+            for(let k = 0; k < 4; k++){
+                for(let i = 0; i < 3; i++){
+                    next[SIDE_STRIPS[face][(k + 1) % 4][i]] = cur[SIDE_STRIPS[face][k][i]];
+                }
+            }
+            cur = next;
+        }
+        return cur.join("");
+    }
+};
+
+//---- coordinates and move tables -------------------------------------------
+
+const Coords = {
+    N_TWIST: 2187, N_FLIP: 2048, N_SLICE: 495,
+    N_CORNER_PERM: 40320, N_UD_EDGE_PERM: 40320, N_SLICE_PERM: 24,
+    PHASE2_MOVES: [0, 1, 2, 4, 7, 9, 10, 11, 13, 16],
+    twistMove: null, flipMove: null, sliceMove: null,
+    cornerPermMove: null, udEdgePermMove: null, slicePermMove: null,
+
+    twist(c){ let t = 0; for(let i = 0; i < 7; i++) t = t * 3 + c.co[i]; return t; },
+    setTwist(c, twist){
+        let sum = 0;
+        for(let i = 6; i >= 0; i--){ c.co[i] = twist % 3; sum += c.co[i]; twist = Math.floor(twist / 3); }
+        c.co[7] = (3 - sum % 3) % 3;
+    },
+    flip(c){ let f = 0; for(let i = 0; i < 11; i++) f = f * 2 + c.eo[i]; return f; },
+    setFlip(c, flip){
+        let sum = 0;
+        for(let i = 10; i >= 0; i--){ c.eo[i] = flip % 2; sum += c.eo[i]; flip = Math.floor(flip / 2); }
+        c.eo[11] = sum % 2;
+    },
+    slice(c){
+        let s = 0, k = 0;
+        for(let j = 11; j >= 0; j--){
+            if(c.ep[j] >= FR){ s += choose(11 - j, k + 1); k++; }
+        }
+        return s;
+    },
+    setSlice(c, slice){
+        const sliceEdges = [FR, FL, BL, BR], otherEdges = [UR, UF, UL, UB, DR, DF, DL, DB];
+        c.ep.fill(-1);
+        let k = 3;
+        for(let j = 0; j < 12; j++){
+            if(slice - choose(11 - j, k + 1) >= 0){
+                c.ep[j] = sliceEdges[3 - k];
+                slice -= choose(11 - j, k + 1);
+                k--;
+            }
+        }
+        let next = 0;
+        for(let j = 0; j < 12; j++) if(c.ep[j] === -1) c.ep[j] = otherEdges[next++];
+    },
+    cornerPerm(c){ return permToIndex(c.cp, 0, 8); },
+    setCornerPerm(c, idx){ indexToPerm(idx, c.cp, 0, 8, 0); },
+    udEdgePerm(c){ return permToIndex(c.ep, 0, 8); },
+    setUdEdgePerm(c, idx){ indexToPerm(idx, c.ep, 0, 8, 0); },
+    slicePerm(c){ return permToIndex(c.ep, 8, 4); },
+    setSlicePerm(c, idx){ indexToPerm(idx, c.ep, 8, 4, 8); },
+
+    init(){
+        if(this.twistMove) return;
+        this.twistMove = buildTable(this.N_TWIST, this.twist, this.setTwist, false);
+        this.flipMove = buildTable(this.N_FLIP, this.flip, this.setFlip, false);
+        this.sliceMove = buildTable(this.N_SLICE, this.slice, this.setSlice, false);
+        this.cornerPermMove = buildTable(this.N_CORNER_PERM, this.cornerPerm, this.setCornerPerm, false);
+        this.udEdgePermMove = buildTable(this.N_UD_EDGE_PERM, this.udEdgePerm, this.setUdEdgePerm, true);
+        this.slicePermMove = buildTable(this.N_SLICE_PERM, this.slicePerm, this.setSlicePerm, true);
+    }
+};
+
+function choose(n, k){
+    if(k < 0 || k > n) return 0;
+    let r = 1;
+    for(let i = 1; i <= k; i++) r = r * (n - k + i) / i;
+    return r;
+}
+
+//Lehmer rank of p[offset .. offset+n-1]; identity -> 0.
+function permToIndex(p, offset, n){
+    let idx = 0;
+    for(let i = 0; i < n; i++){
+        let smallerAfter = 0;
+        for(let j = i + 1; j < n; j++) if(p[offset + j] < p[offset + i]) smallerAfter++;
+        idx = idx * (n - i) + smallerAfter;
+    }
+    return idx;
+}
+
+function indexToPerm(idx, p, offset, n, base){
+    const digit = new Array(n);
+    for(let i = n - 1; i >= 0; i--){
+        digit[i] = idx % (n - i);
+        idx = Math.floor(idx / (n - i));
+    }
+    const used = new Array(n).fill(false);
+    for(let i = 0; i < n; i++){
+        let count = 0;
+        for(let v = 0; v < n; v++){
+            if(used[v]) continue;
+            if(count === digit[i]){ p[offset + i] = v + base; used[v] = true; break; }
+            count++;
+        }
+    }
+}
+
+function buildTable(size, get, set, phase2Only){
+    const table = new Uint16Array(size * Moves.COUNT);
+    for(let coord = 0; coord < size; coord++){
+        const base = new CubieCube();
+        set(base, coord);
+        for(let m = 0; m < Moves.COUNT; m++){
+            if(phase2Only && !Moves.isPhase2(m)) continue;
+            const c = base.clone();
+            c.applyMove(m);
+            table[coord * Moves.COUNT + m] = get(c);
+        }
+    }
+    return table;
+}
+
+//---- pruning tables --------------------------------------------------------
+
+const Pruning = {
+    sliceTwist: null, sliceFlip: null, twistFlip: null, sliceCornerPerm: null, sliceUdEdgePerm: null,
+    init(){
+        if(this.sliceTwist) return;
+        Coords.init();
+        const all = [...Array(Moves.COUNT).keys()];
+        const C = Coords;
+        this.sliceTwist = fill(C.N_SLICE, C.N_TWIST, C.sliceMove, C.twistMove, all);
+        this.sliceFlip = fill(C.N_SLICE, C.N_FLIP, C.sliceMove, C.flipMove, all);
+        this.twistFlip = fill(C.N_TWIST, C.N_FLIP, C.twistMove, C.flipMove, all);
+        this.sliceCornerPerm = fill(C.N_SLICE_PERM, C.N_CORNER_PERM, C.slicePermMove, C.cornerPermMove, C.PHASE2_MOVES);
+        this.sliceUdEdgePerm = fill(C.N_SLICE_PERM, C.N_UD_EDGE_PERM, C.slicePermMove, C.udEdgePermMove, C.PHASE2_MOVES);
+    }
+};
+
+const EMPTY = 0xFF;
+function fill(sizeA, sizeB, moveA, moveB, moves){
+    const table = new Uint8Array(sizeA * sizeB).fill(EMPTY);
+    table[0] = 0;
+    let filled = 1, depth = 0;
+    while(filled < sizeA * sizeB){
+        let progress = false;
+        for(let a = 0; a < sizeA; a++){
+            for(let b = 0; b < sizeB; b++){
+                if(table[a * sizeB + b] !== depth) continue;
+                for(const m of moves){
+                    const na = moveA[a * 18 + m], nb = moveB[b * 18 + m];
+                    const slot = na * sizeB + nb;
+                    if(table[slot] === EMPTY){
+                        table[slot] = depth + 1;
+                        filled++;
+                        progress = true;
+                    }
+                }
+            }
+        }
+        if(!progress) break;
+        depth++;
+    }
+    return table;
+}
+
+//---- the two-phase search --------------------------------------------------
+
+class Solver{
+    static PHASE2_MAX_DEPTH = 11;
+    static PROBE_COUNT = 6;
+
+    constructor(){
+        Pruning.init();
+        this.nodes = 0;
+    }
+
+    //Same contract as Solver::solve in C++: returns "R U2 ..." or "".
+    solve(cube, maxLength = 24, stopLength = 24, timeMs = 0){
+        if(typeof cube === "string") cube = CubieCube.fromFacelets(cube);
+        if(cube.verify() !== "") return "";
+        this.setupProbes(cube);
+        this.best = [];
+        this.bestLength = maxLength + 1;
+        this.stopLength = stopLength;
+        this.done = false;
+        this.nodes = 0;
+        this.timed = timeMs > 0;
+        this.deadline = Date.now() + timeMs;
+        if(cube.isSolved()) return "";
+        for(let depth1 = 0; depth1 <= 12 && depth1 < this.bestLength && !this.done; depth1++){
+            for(const p of this.probes){
+                p.moves1.length = 0;
+                this.phase1(p, p.twist, p.flip, p.slice, depth1, -1);
+                if(this.done) break;
+            }
+        }
+        return Moves.toString(this.best);
+    }
+
+    setupProbes(cube){
+        const axes = [" ", "x", "z"];
+        this.probes = [];
+        const original = cube.toFacelets();
+        for(let k = 0; k < Solver.PROBE_COUNT; k++){
+            const rotated = axes[k % 3] === " " ? original : Facelets.rotate(original, axes[k % 3]);
+            const faceMap = [];
+            for(let face = 0; face < 6; face++) faceMap.push(FACE_NAMES.indexOf(rotated[face * 9 + 4]));
+            let c = CubieCube.fromFacelets(Facelets.relabelByCentres(rotated));
+            const inverted = k >= 3;
+            if(inverted) c = c.inverse();
+            this.probes.push({
+                cube: c, faceMap, inverted,
+                twist: Coords.twist(c), flip: Coords.flip(c), slice: Coords.slice(c),
+                moves1: [], moves2: []
+            });
+        }
+    }
+
+    checkTime(){
+        if(this.timed && Date.now() >= this.deadline) this.done = true;
+    }
+
+    phase1(p, twist, flip, slice, depth, lastFace){
+        if(depth === 0){
+            if(twist === 0 && flip === 0 && slice === 0){
+                if(p.moves1.length > 0 && Moves.isPhase2(p.moves1[p.moves1.length - 1])) return;
+                this.startPhase2(p, lastFace);
+            }
+            return;
+        }
+        const C = Coords, P = Pruning;
+        let h = P.sliceTwist[slice * C.N_TWIST + twist];
+        h = Math.max(h, P.sliceFlip[slice * C.N_FLIP + flip]);
+        h = Math.max(h, P.twistFlip[twist * C.N_FLIP + flip]);
+        if(h > depth) return;
+        if((++this.nodes & 4095) === 0) this.checkTime();
+        for(let face = 0; face < 6; face++){
+            if(face === lastFace || face === lastFace - 3) continue;
+            for(let power = 0; power < 3; power++){
+                const m = face * 3 + power;
+                p.moves1.push(m);
+                this.phase1(p, C.twistMove[twist * 18 + m], C.flipMove[flip * 18 + m], C.sliceMove[slice * 18 + m], depth - 1, face);
+                p.moves1.pop();
+                if(this.done) return;
+            }
+        }
+    }
+
+    startPhase2(p, lastFace){
+        const C = Coords, P = Pruning;
+        const c = p.cube.clone().applyMoves(p.moves1);
+        const cornerPerm = C.cornerPerm(c), udEdgePerm = C.udEdgePerm(c), slicePerm = C.slicePerm(c);
+        const maxDepth2 = Math.min(Solver.PHASE2_MAX_DEPTH, this.bestLength - 1 - p.moves1.length);
+        const h = Math.max(P.sliceCornerPerm[slicePerm * C.N_CORNER_PERM + cornerPerm],
+                           P.sliceUdEdgePerm[slicePerm * C.N_UD_EDGE_PERM + udEdgePerm]);
+        for(let depth2 = h; depth2 <= maxDepth2; depth2++){
+            p.moves2.length = 0;
+            if(this.phase2(p, cornerPerm, udEdgePerm, slicePerm, depth2, lastFace)){
+                this.record(p);
+                return;
+            }
+            if(this.done) return;
+        }
+    }
+
+    phase2(p, cornerPerm, udEdgePerm, slicePerm, depth, lastFace){
+        const C = Coords, P = Pruning;
+        if(depth === 0) return cornerPerm === 0 && udEdgePerm === 0 && slicePerm === 0;
+        const h = Math.max(P.sliceCornerPerm[slicePerm * C.N_CORNER_PERM + cornerPerm],
+                           P.sliceUdEdgePerm[slicePerm * C.N_UD_EDGE_PERM + udEdgePerm]);
+        if(h > depth) return false;
+        if((++this.nodes & 4095) === 0) this.checkTime();
+        for(let k = 0; k < 10; k++){
+            const m = C.PHASE2_MOVES[k];
+            const face = Math.floor(m / 3);
+            if(face === lastFace || face === lastFace - 3) continue;
+            p.moves2.push(m);
+            const found = this.phase2(p, C.cornerPermMove[cornerPerm * 18 + m], C.udEdgePermMove[udEdgePerm * 18 + m],
+                                      C.slicePermMove[slicePerm * 18 + m], depth - 1, face);
+            if(found) return true;
+            p.moves2.pop();
+            if(this.done) return false;
+        }
+        return false;
+    }
+
+    record(p){
+        let moves = p.moves1.concat(p.moves2);
+        if(moves.length >= this.bestLength) return;
+        if(p.inverted) moves = moves.reverse().map(m => Moves.inverse(m));
+        moves = moves.map(m => p.faceMap[Math.floor(m / 3)] * 3 + m % 3);
+        this.best = moves;
+        this.bestLength = moves.length;
+        if(this.bestLength <= this.stopLength) this.done = true;
+    }
+}
+
+//Mirror of "cube3 vectors COUNT --stop N --seed S": returns "facelets solution" lines.
+function solveVectors(count = 100, stop = 24, seed = 777){
+    const rng = new Random(seed);
+    const solver = new Solver();
+    const lines = [];
+    for(let i = 0; i < count; i++){
+        const cube = CubieCube.random(rng);
+        lines.push(cube.toFacelets() + " " + solver.solve(cube, 24, stop, 0));
+    }
+    return lines;
+}
+
+return {Corner, Edge, Face, FACE_NAMES, CORNER_FACELET, EDGE_FACELET, CORNER_COLOR, EDGE_COLOR, Random, CubieCube, Moves, Facelets, Coords, Pruning, Solver, solveVectors};
+})();
+
+//Web Worker that owns the solver, so building the tables (a couple of
+//seconds in JavaScript) and searching never freeze the page.
+//Messages in:  {type: "init"}  {type: "solve", id, facelets, maxLength, stopLength, timeMs}
+//Messages out: {type: "ready", ms}  {type: "solution", id, moves, ms}  {type: "error", id, message}
+const {Solver} = __m_solver;
+let solver = null;
+
+function ready(){
+    if(!solver){
+        const t = Date.now();
+        solver = new Solver();
+        postMessage({type: "ready", ms: Date.now() - t});
+    }
+    return solver;
+}
+
+onmessage = event => {
+    const msg = event.data;
+    if(msg.type === "init"){
+        ready();
+    }else if(msg.type === "solve"){
+        try{
+            const s = ready();
+            const t = Date.now();
+            const moves = s.solve(msg.facelets, msg.maxLength ?? 24, msg.stopLength ?? 24, msg.timeMs ?? 0);
+            postMessage({type: "solution", id: msg.id, moves, ms: Date.now() - t});
+        }catch(err){
+            postMessage({type: "error", id: msg.id, message: String(err && err.message || err)});
+        }
+    }
+};
+
+</script>
+<script type="module">
+const __m_solver = (() => {
+//JavaScript port of the C++ two-phase solver (src/Cube.cpp, Coords.cpp,
+//Pruning.cpp, Solver.cpp). It is a line-by-line translation with the same
+//table layouts, the same search order and the same random number generator,
+//so "cube3 vectors" from the C++ build and solveVectors() here print the
+//same move sequences. tests/solver.test.js checks exactly that.
+//
+//Runs in the browser (inside a Web Worker, see worker.js) and in Node.
+
+//---- names and tables ------------------------------------------------------
+
+const Corner = {URF: 0, UFL: 1, ULB: 2, UBR: 3, DFR: 4, DLF: 5, DBL: 6, DRB: 7};
+const Edge = {UR: 0, UF: 1, UL: 2, UB: 3, DR: 4, DF: 5, DL: 6, DB: 7, FR: 8, FL: 9, BL: 10, BR: 11};
+const Face = {U: 0, R: 1, F: 2, D: 3, L: 4, B: 5};
+const FACE_NAMES = "URFDLB";
+const {URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB} = Corner;
+const {UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR} = Edge;
+const {U, R, F, D, L, B} = Face;
+
+//Facelet index = face * 9 + row * 3 + column (see Cube.h for the layout).
+const CORNER_FACELET = [
+    [8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11],
+    [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51]
+];
+const EDGE_FACELET = [
+    [5, 10], [7, 19], [3, 37], [1, 46], [32, 16], [28, 25],
+    [30, 43], [34, 52], [23, 12], [21, 41], [50, 39], [48, 14]
+];
+const CORNER_COLOR = [
+    [U, R, F], [U, F, L], [U, L, B], [U, B, R],
+    [D, F, R], [D, L, F], [D, B, L], [D, R, B]
+];
+const EDGE_COLOR = [
+    [U, R], [U, F], [U, L], [U, B], [D, R], [D, F],
+    [D, L], [D, B], [F, R], [F, L], [B, L], [B, R]
+];
+const CORNER_NAMES = ["URF", "UFL", "ULB", "UBR", "DFR", "DLF", "DBL", "DRB"];
+const EDGE_NAMES = ["UR", "UF", "UL", "UB", "DR", "DF", "DL", "DB", "FR", "FL", "BL", "BR"];
+
+//---- random numbers (xorshift32, identical to Random in Cube.h) ------------
+
+class Random{
+    constructor(seed){
+        this.state = (seed >>> 0) || 0x9E3779B9;
+    }
+    next(){
+        let x = this.state;
+        x ^= x << 13; x >>>= 0;
+        x ^= x >>> 17;
+        x ^= x << 5; x >>>= 0;
+        this.state = x;
+        return x;
+    }
+    nextInt(n){
+        return this.next() % n;
+    }
+}
+
+//---- cubie-level cube ------------------------------------------------------
+
+class CubieCube{
+    constructor(){
+        this.cp = [0, 1, 2, 3, 4, 5, 6, 7];
+        this.co = [0, 0, 0, 0, 0, 0, 0, 0];
+        this.ep = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+        this.eo = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    }
+
+    static make(cp, co, ep, eo){
+        const c = new CubieCube();
+        c.cp = cp.slice(); c.co = co.slice(); c.ep = ep.slice(); c.eo = eo.slice();
+        return c;
+    }
+
+    clone(){
+        return CubieCube.make(this.cp, this.co, this.ep, this.eo);
+    }
+
+    //this followed by other
+    multiply(b){
+        const r = new CubieCube();
+        for(let i = 0; i < 8; i++){
+            r.cp[i] = this.cp[b.cp[i]];
+            r.co[i] = (this.co[b.cp[i]] + b.co[i]) % 3;
+        }
+        for(let i = 0; i < 12; i++){
+            r.ep[i] = this.ep[b.ep[i]];
+            r.eo[i] = (this.eo[b.ep[i]] + b.eo[i]) % 2;
+        }
+        return r;
+    }
+
+    inverse(){
+        const r = new CubieCube();
+        for(let i = 0; i < 8; i++){
+            r.cp[this.cp[i]] = i;
+            r.co[this.cp[i]] = (3 - this.co[i]) % 3;
+        }
+        for(let i = 0; i < 12; i++){
+            r.ep[this.ep[i]] = i;
+            r.eo[this.ep[i]] = this.eo[i];
+        }
+        return r;
+    }
+
+    applyMove(move){
+        const face = Math.floor(move / 3), turns = move % 3 + 1;
+        let c = this;
+        for(let k = 0; k < turns; k++) c = c.multiply(Moves.BASIC[face]);
+        this.cp = c.cp; this.co = c.co; this.ep = c.ep; this.eo = c.eo;
+        return this;
+    }
+
+    applyMoves(moves){
+        for(const m of moves) this.applyMove(m);
+        return this;
+    }
+
+    equals(o){
+        for(let i = 0; i < 8; i++) if(this.cp[i] !== o.cp[i] || this.co[i] !== o.co[i]) return false;
+        for(let i = 0; i < 12; i++) if(this.ep[i] !== o.ep[i] || this.eo[i] !== o.eo[i]) return false;
+        return true;
+    }
+
+    isSolved(){
+        return this.equals(new CubieCube());
+    }
+
+    toFacelets(){
+        const f = new Array(54).fill("?");
+        for(let i = 0; i < 8; i++){
+            for(let n = 0; n < 3; n++){
+                f[CORNER_FACELET[i][(n + this.co[i]) % 3]] = FACE_NAMES[CORNER_COLOR[this.cp[i]][n]];
+            }
+        }
+        for(let i = 0; i < 12; i++){
+            for(let n = 0; n < 2; n++){
+                f[EDGE_FACELET[i][(n + this.eo[i]) % 2]] = FACE_NAMES[EDGE_COLOR[this.ep[i]][n]];
+            }
+        }
+        for(let face = 0; face < 6; face++) f[face * 9 + 4] = FACE_NAMES[face];
+        return f.join("");
+    }
+
+    static fromFacelets(facelets){
+        const c = new CubieCube();
+        c.cp.fill(-1); c.co.fill(0); c.ep.fill(-1); c.eo.fill(0);
+        if(typeof facelets !== "string" || facelets.length !== 54) return c;
+        const f = [];
+        for(let i = 0; i < 54; i++){
+            const face = FACE_NAMES.indexOf(facelets[i]);
+            if(face < 0) return c;
+            f.push(face);
+        }
+        for(let i = 0; i < 8; i++){
+            let ori = 0;
+            while(ori < 3 && f[CORNER_FACELET[i][ori]] !== U && f[CORNER_FACELET[i][ori]] !== D) ori++;
+            if(ori === 3) continue;
+            const col1 = f[CORNER_FACELET[i][(ori + 1) % 3]];
+            const col2 = f[CORNER_FACELET[i][(ori + 2) % 3]];
+            for(let j = 0; j < 8; j++){
+                if(col1 === CORNER_COLOR[j][1] && col2 === CORNER_COLOR[j][2]){
+                    c.cp[i] = j;
+                    c.co[i] = ori;
+                    break;
+                }
+            }
+        }
+        for(let i = 0; i < 12; i++){
+            const a = f[EDGE_FACELET[i][0]], b = f[EDGE_FACELET[i][1]];
+            for(let j = 0; j < 12; j++){
+                if(a === EDGE_COLOR[j][0] && b === EDGE_COLOR[j][1]){ c.ep[i] = j; c.eo[i] = 0; break; }
+                if(a === EDGE_COLOR[j][1] && b === EDGE_COLOR[j][0]){ c.ep[i] = j; c.eo[i] = 1; break; }
+            }
+        }
+        return c;
+    }
+
+    //"" when the cube is solvable, otherwise a short reason.
+    verify(){
+        const cornerCount = new Array(8).fill(0), edgeCount = new Array(12).fill(0);
+        for(let i = 0; i < 8; i++){
+            if(this.cp[i] < 0 || this.cp[i] > 7) return `the corner at ${CORNER_NAMES[i]} has an impossible colour combination`;
+            cornerCount[this.cp[i]]++;
+        }
+        for(let i = 0; i < 12; i++){
+            if(this.ep[i] < 0 || this.ep[i] > 11) return `the edge at ${EDGE_NAMES[i]} has an impossible colour combination`;
+            edgeCount[this.ep[i]]++;
+        }
+        for(let i = 0; i < 8; i++) if(cornerCount[i] !== 1) return `the ${CORNER_NAMES[i]} corner appears ${cornerCount[i]} times`;
+        for(let i = 0; i < 12; i++) if(edgeCount[i] !== 1) return `the ${EDGE_NAMES[i]} edge appears ${edgeCount[i]} times`;
+        let twist = 0, flip = 0;
+        for(let i = 0; i < 8; i++) twist += this.co[i];
+        for(let i = 0; i < 12; i++) flip += this.eo[i];
+        if(twist % 3 !== 0) return "one corner is twisted (total twist is not a multiple of 3)";
+        if(flip % 2 !== 0) return "one edge is flipped (an odd number of edges are flipped)";
+        if(parity(this.cp) !== parity(this.ep)) return "two pieces are swapped (corner and edge parity differ)";
+        return "";
+    }
+
+    static random(rng){
+        const c = new CubieCube();
+        for(let i = 7; i > 0; i--){
+            const j = rng.nextInt(i + 1);
+            [c.cp[i], c.cp[j]] = [c.cp[j], c.cp[i]];
+        }
+        for(let i = 11; i > 0; i--){
+            const j = rng.nextInt(i + 1);
+            [c.ep[i], c.ep[j]] = [c.ep[j], c.ep[i]];
+        }
+        if(parity(c.cp) !== parity(c.ep)) [c.ep[0], c.ep[1]] = [c.ep[1], c.ep[0]];
+        let sum = 0;
+        for(let i = 0; i < 7; i++){ c.co[i] = rng.nextInt(3); sum += c.co[i]; }
+        c.co[7] = (3 - sum % 3) % 3;
+        sum = 0;
+        for(let i = 0; i < 11; i++){ c.eo[i] = rng.nextInt(2); sum += c.eo[i]; }
+        c.eo[11] = sum % 2;
+        return c;
+    }
+}
+
+function parity(p){
+    let par = 0;
+    for(let i = 0; i < p.length; i++) for(let j = i + 1; j < p.length; j++) if(p[i] > p[j]) par ^= 1;
+    return par;
+}
+
+//---- moves -----------------------------------------------------------------
+
+const Moves = {
+    COUNT: 18,
+    BASIC: [
+        CubieCube.make([UBR, URF, UFL, ULB, DFR, DLF, DBL, DRB], [0, 0, 0, 0, 0, 0, 0, 0],
+                       [UB, UR, UF, UL, DR, DF, DL, DB, FR, FL, BL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([DFR, UFL, ULB, URF, DRB, DLF, DBL, UBR], [2, 0, 0, 1, 1, 0, 0, 2],
+                       [FR, UF, UL, UB, BR, DF, DL, DB, DR, FL, BL, UR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([UFL, DLF, ULB, UBR, URF, DFR, DBL, DRB], [1, 2, 0, 0, 2, 1, 0, 0],
+                       [UR, FL, UL, UB, DR, FR, DL, DB, UF, DF, BL, BR], [0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0, 0]),
+        CubieCube.make([URF, UFL, ULB, UBR, DLF, DBL, DRB, DFR], [0, 0, 0, 0, 0, 0, 0, 0],
+                       [UR, UF, UL, UB, DF, DL, DB, DR, FR, FL, BL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([URF, ULB, DBL, UBR, DFR, UFL, DLF, DRB], [0, 1, 2, 0, 0, 2, 1, 0],
+                       [UR, UF, BL, UB, DR, DF, FL, DB, FR, UL, DL, BR], [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        CubieCube.make([URF, UFL, UBR, DRB, DFR, DLF, ULB, DBL], [0, 0, 1, 2, 0, 0, 2, 1],
+                       [UR, UF, UL, BR, DR, DF, DL, BL, FR, FL, UB, DB], [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1])
+    ],
+    name(move){
+        return FACE_NAMES[Math.floor(move / 3)] + ["", "2", "'"][move % 3];
+    },
+    parse(token){
+        if(!token || token.length > 2) return -1;
+        const face = FACE_NAMES.indexOf(token[0]);
+        if(face < 0) return -1;
+        let power = 0;
+        if(token.length === 2){
+            if(token[1] === "2") power = 1;
+            else if(token[1] === "'") power = 2;
+            else return -1;
+        }
+        return face * 3 + power;
+    },
+    inverse(move){
+        return Math.floor(move / 3) * 3 + (2 - move % 3);
+    },
+    isPhase2(move){
+        const face = Math.floor(move / 3);
+        return face === U || face === D || move % 3 === 1;
+    },
+    parseSequence(text){
+        return String(text).split(/\s+/).map(t => Moves.parse(t)).filter(m => m >= 0);
+    },
+    toString(moves){
+        return moves.map(m => Moves.name(m)).join(" ");
+    }
+};
+
+//---- facelet helpers -------------------------------------------------------
+
+const SAME = 0, CW = 1, HALF = 2, CCW = 3;
+function spinIndex(spin, row, col){
+    switch(spin){
+        case CW: return (2 - col) * 3 + row;
+        case HALF: return (2 - row) * 3 + (2 - col);
+        case CCW: return col * 3 + (2 - row);
+        default: return row * 3 + col;
+    }
+}
+
+const ROTATIONS = {
+    x: {from: [F, R, D, B, L, U], spin: [SAME, CW, SAME, HALF, CCW, HALF]},
+    y: {from: [U, B, R, D, F, L], spin: [CW, SAME, SAME, CCW, SAME, SAME]},
+    z: {from: [L, U, F, R, D, B], spin: [CW, CW, CW, CW, CW, CCW]}
+};
+
+const SIDE_STRIPS = [
+    [[18, 19, 20], [36, 37, 38], [45, 46, 47], [9, 10, 11]],
+    [[20, 23, 26], [2, 5, 8], [51, 48, 45], [29, 32, 35]],
+    [[6, 7, 8], [9, 12, 15], [29, 28, 27], [44, 41, 38]],
+    [[24, 25, 26], [15, 16, 17], [51, 52, 53], [42, 43, 44]],
+    [[0, 3, 6], [18, 21, 24], [27, 30, 33], [53, 50, 47]],
+    [[2, 1, 0], [36, 39, 42], [33, 34, 35], [17, 14, 11]]
+];
+
+const Facelets = {
+    SOLVED: "UUUUUUUUURRRRRRRRRFFFFFFFFFDDDDDDDDDLLLLLLLLLBBBBBBBBB",
+    rotate(facelets, axis){
+        const {from, spin} = ROTATIONS[axis];
+        const out = new Array(54);
+        for(let face = 0; face < 6; face++){
+            for(let row = 0; row < 3; row++){
+                for(let col = 0; col < 3; col++){
+                    out[face * 9 + row * 3 + col] = facelets[from[face] * 9 + spinIndex(spin[face], row, col)];
+                }
+            }
+        }
+        return out.join("");
+    },
+    relabelByCentres(facelets){
+        const map = {};
+        for(let face = 0; face < 6; face++) map[facelets[face * 9 + 4]] = FACE_NAMES[face];
+        return Array.from(facelets, ch => map[ch] || "?").join("");
+    },
+    applyMove(facelets, move){
+        const face = Math.floor(move / 3), turns = move % 3 + 1;
+        let cur = facelets.split("");
+        for(let t = 0; t < turns; t++){
+            const next = cur.slice();
+            for(let row = 0; row < 3; row++){
+                for(let col = 0; col < 3; col++){
+                    next[face * 9 + row * 3 + col] = cur[face * 9 + spinIndex(CW, row, col)];
+                }
+            }
+            for(let k = 0; k < 4; k++){
+                for(let i = 0; i < 3; i++){
+                    next[SIDE_STRIPS[face][(k + 1) % 4][i]] = cur[SIDE_STRIPS[face][k][i]];
+                }
+            }
+            cur = next;
+        }
+        return cur.join("");
+    }
+};
+
+//---- coordinates and move tables -------------------------------------------
+
+const Coords = {
+    N_TWIST: 2187, N_FLIP: 2048, N_SLICE: 495,
+    N_CORNER_PERM: 40320, N_UD_EDGE_PERM: 40320, N_SLICE_PERM: 24,
+    PHASE2_MOVES: [0, 1, 2, 4, 7, 9, 10, 11, 13, 16],
+    twistMove: null, flipMove: null, sliceMove: null,
+    cornerPermMove: null, udEdgePermMove: null, slicePermMove: null,
+
+    twist(c){ let t = 0; for(let i = 0; i < 7; i++) t = t * 3 + c.co[i]; return t; },
+    setTwist(c, twist){
+        let sum = 0;
+        for(let i = 6; i >= 0; i--){ c.co[i] = twist % 3; sum += c.co[i]; twist = Math.floor(twist / 3); }
+        c.co[7] = (3 - sum % 3) % 3;
+    },
+    flip(c){ let f = 0; for(let i = 0; i < 11; i++) f = f * 2 + c.eo[i]; return f; },
+    setFlip(c, flip){
+        let sum = 0;
+        for(let i = 10; i >= 0; i--){ c.eo[i] = flip % 2; sum += c.eo[i]; flip = Math.floor(flip / 2); }
+        c.eo[11] = sum % 2;
+    },
+    slice(c){
+        let s = 0, k = 0;
+        for(let j = 11; j >= 0; j--){
+            if(c.ep[j] >= FR){ s += choose(11 - j, k + 1); k++; }
+        }
+        return s;
+    },
+    setSlice(c, slice){
+        const sliceEdges = [FR, FL, BL, BR], otherEdges = [UR, UF, UL, UB, DR, DF, DL, DB];
+        c.ep.fill(-1);
+        let k = 3;
+        for(let j = 0; j < 12; j++){
+            if(slice - choose(11 - j, k + 1) >= 0){
+                c.ep[j] = sliceEdges[3 - k];
+                slice -= choose(11 - j, k + 1);
+                k--;
+            }
+        }
+        let next = 0;
+        for(let j = 0; j < 12; j++) if(c.ep[j] === -1) c.ep[j] = otherEdges[next++];
+    },
+    cornerPerm(c){ return permToIndex(c.cp, 0, 8); },
+    setCornerPerm(c, idx){ indexToPerm(idx, c.cp, 0, 8, 0); },
+    udEdgePerm(c){ return permToIndex(c.ep, 0, 8); },
+    setUdEdgePerm(c, idx){ indexToPerm(idx, c.ep, 0, 8, 0); },
+    slicePerm(c){ return permToIndex(c.ep, 8, 4); },
+    setSlicePerm(c, idx){ indexToPerm(idx, c.ep, 8, 4, 8); },
+
+    init(){
+        if(this.twistMove) return;
+        this.twistMove = buildTable(this.N_TWIST, this.twist, this.setTwist, false);
+        this.flipMove = buildTable(this.N_FLIP, this.flip, this.setFlip, false);
+        this.sliceMove = buildTable(this.N_SLICE, this.slice, this.setSlice, false);
+        this.cornerPermMove = buildTable(this.N_CORNER_PERM, this.cornerPerm, this.setCornerPerm, false);
+        this.udEdgePermMove = buildTable(this.N_UD_EDGE_PERM, this.udEdgePerm, this.setUdEdgePerm, true);
+        this.slicePermMove = buildTable(this.N_SLICE_PERM, this.slicePerm, this.setSlicePerm, true);
+    }
+};
+
+function choose(n, k){
+    if(k < 0 || k > n) return 0;
+    let r = 1;
+    for(let i = 1; i <= k; i++) r = r * (n - k + i) / i;
+    return r;
+}
+
+//Lehmer rank of p[offset .. offset+n-1]; identity -> 0.
+function permToIndex(p, offset, n){
+    let idx = 0;
+    for(let i = 0; i < n; i++){
+        let smallerAfter = 0;
+        for(let j = i + 1; j < n; j++) if(p[offset + j] < p[offset + i]) smallerAfter++;
+        idx = idx * (n - i) + smallerAfter;
+    }
+    return idx;
+}
+
+function indexToPerm(idx, p, offset, n, base){
+    const digit = new Array(n);
+    for(let i = n - 1; i >= 0; i--){
+        digit[i] = idx % (n - i);
+        idx = Math.floor(idx / (n - i));
+    }
+    const used = new Array(n).fill(false);
+    for(let i = 0; i < n; i++){
+        let count = 0;
+        for(let v = 0; v < n; v++){
+            if(used[v]) continue;
+            if(count === digit[i]){ p[offset + i] = v + base; used[v] = true; break; }
+            count++;
+        }
+    }
+}
+
+function buildTable(size, get, set, phase2Only){
+    const table = new Uint16Array(size * Moves.COUNT);
+    for(let coord = 0; coord < size; coord++){
+        const base = new CubieCube();
+        set(base, coord);
+        for(let m = 0; m < Moves.COUNT; m++){
+            if(phase2Only && !Moves.isPhase2(m)) continue;
+            const c = base.clone();
+            c.applyMove(m);
+            table[coord * Moves.COUNT + m] = get(c);
+        }
+    }
+    return table;
+}
+
+//---- pruning tables --------------------------------------------------------
+
+const Pruning = {
+    sliceTwist: null, sliceFlip: null, twistFlip: null, sliceCornerPerm: null, sliceUdEdgePerm: null,
+    init(){
+        if(this.sliceTwist) return;
+        Coords.init();
+        const all = [...Array(Moves.COUNT).keys()];
+        const C = Coords;
+        this.sliceTwist = fill(C.N_SLICE, C.N_TWIST, C.sliceMove, C.twistMove, all);
+        this.sliceFlip = fill(C.N_SLICE, C.N_FLIP, C.sliceMove, C.flipMove, all);
+        this.twistFlip = fill(C.N_TWIST, C.N_FLIP, C.twistMove, C.flipMove, all);
+        this.sliceCornerPerm = fill(C.N_SLICE_PERM, C.N_CORNER_PERM, C.slicePermMove, C.cornerPermMove, C.PHASE2_MOVES);
+        this.sliceUdEdgePerm = fill(C.N_SLICE_PERM, C.N_UD_EDGE_PERM, C.slicePermMove, C.udEdgePermMove, C.PHASE2_MOVES);
+    }
+};
+
+const EMPTY = 0xFF;
+function fill(sizeA, sizeB, moveA, moveB, moves){
+    const table = new Uint8Array(sizeA * sizeB).fill(EMPTY);
+    table[0] = 0;
+    let filled = 1, depth = 0;
+    while(filled < sizeA * sizeB){
+        let progress = false;
+        for(let a = 0; a < sizeA; a++){
+            for(let b = 0; b < sizeB; b++){
+                if(table[a * sizeB + b] !== depth) continue;
+                for(const m of moves){
+                    const na = moveA[a * 18 + m], nb = moveB[b * 18 + m];
+                    const slot = na * sizeB + nb;
+                    if(table[slot] === EMPTY){
+                        table[slot] = depth + 1;
+                        filled++;
+                        progress = true;
+                    }
+                }
+            }
+        }
+        if(!progress) break;
+        depth++;
+    }
+    return table;
+}
+
+//---- the two-phase search --------------------------------------------------
+
+class Solver{
+    static PHASE2_MAX_DEPTH = 11;
+    static PROBE_COUNT = 6;
+
+    constructor(){
+        Pruning.init();
+        this.nodes = 0;
+    }
+
+    //Same contract as Solver::solve in C++: returns "R U2 ..." or "".
+    solve(cube, maxLength = 24, stopLength = 24, timeMs = 0){
+        if(typeof cube === "string") cube = CubieCube.fromFacelets(cube);
+        if(cube.verify() !== "") return "";
+        this.setupProbes(cube);
+        this.best = [];
+        this.bestLength = maxLength + 1;
+        this.stopLength = stopLength;
+        this.done = false;
+        this.nodes = 0;
+        this.timed = timeMs > 0;
+        this.deadline = Date.now() + timeMs;
+        if(cube.isSolved()) return "";
+        for(let depth1 = 0; depth1 <= 12 && depth1 < this.bestLength && !this.done; depth1++){
+            for(const p of this.probes){
+                p.moves1.length = 0;
+                this.phase1(p, p.twist, p.flip, p.slice, depth1, -1);
+                if(this.done) break;
+            }
+        }
+        return Moves.toString(this.best);
+    }
+
+    setupProbes(cube){
+        const axes = [" ", "x", "z"];
+        this.probes = [];
+        const original = cube.toFacelets();
+        for(let k = 0; k < Solver.PROBE_COUNT; k++){
+            const rotated = axes[k % 3] === " " ? original : Facelets.rotate(original, axes[k % 3]);
+            const faceMap = [];
+            for(let face = 0; face < 6; face++) faceMap.push(FACE_NAMES.indexOf(rotated[face * 9 + 4]));
+            let c = CubieCube.fromFacelets(Facelets.relabelByCentres(rotated));
+            const inverted = k >= 3;
+            if(inverted) c = c.inverse();
+            this.probes.push({
+                cube: c, faceMap, inverted,
+                twist: Coords.twist(c), flip: Coords.flip(c), slice: Coords.slice(c),
+                moves1: [], moves2: []
+            });
+        }
+    }
+
+    checkTime(){
+        if(this.timed && Date.now() >= this.deadline) this.done = true;
+    }
+
+    phase1(p, twist, flip, slice, depth, lastFace){
+        if(depth === 0){
+            if(twist === 0 && flip === 0 && slice === 0){
+                if(p.moves1.length > 0 && Moves.isPhase2(p.moves1[p.moves1.length - 1])) return;
+                this.startPhase2(p, lastFace);
+            }
+            return;
+        }
+        const C = Coords, P = Pruning;
+        let h = P.sliceTwist[slice * C.N_TWIST + twist];
+        h = Math.max(h, P.sliceFlip[slice * C.N_FLIP + flip]);
+        h = Math.max(h, P.twistFlip[twist * C.N_FLIP + flip]);
+        if(h > depth) return;
+        if((++this.nodes & 4095) === 0) this.checkTime();
+        for(let face = 0; face < 6; face++){
+            if(face === lastFace || face === lastFace - 3) continue;
+            for(let power = 0; power < 3; power++){
+                const m = face * 3 + power;
+                p.moves1.push(m);
+                this.phase1(p, C.twistMove[twist * 18 + m], C.flipMove[flip * 18 + m], C.sliceMove[slice * 18 + m], depth - 1, face);
+                p.moves1.pop();
+                if(this.done) return;
+            }
+        }
+    }
+
+    startPhase2(p, lastFace){
+        const C = Coords, P = Pruning;
+        const c = p.cube.clone().applyMoves(p.moves1);
+        const cornerPerm = C.cornerPerm(c), udEdgePerm = C.udEdgePerm(c), slicePerm = C.slicePerm(c);
+        const maxDepth2 = Math.min(Solver.PHASE2_MAX_DEPTH, this.bestLength - 1 - p.moves1.length);
+        const h = Math.max(P.sliceCornerPerm[slicePerm * C.N_CORNER_PERM + cornerPerm],
+                           P.sliceUdEdgePerm[slicePerm * C.N_UD_EDGE_PERM + udEdgePerm]);
+        for(let depth2 = h; depth2 <= maxDepth2; depth2++){
+            p.moves2.length = 0;
+            if(this.phase2(p, cornerPerm, udEdgePerm, slicePerm, depth2, lastFace)){
+                this.record(p);
+                return;
+            }
+            if(this.done) return;
+        }
+    }
+
+    phase2(p, cornerPerm, udEdgePerm, slicePerm, depth, lastFace){
+        const C = Coords, P = Pruning;
+        if(depth === 0) return cornerPerm === 0 && udEdgePerm === 0 && slicePerm === 0;
+        const h = Math.max(P.sliceCornerPerm[slicePerm * C.N_CORNER_PERM + cornerPerm],
+                           P.sliceUdEdgePerm[slicePerm * C.N_UD_EDGE_PERM + udEdgePerm]);
+        if(h > depth) return false;
+        if((++this.nodes & 4095) === 0) this.checkTime();
+        for(let k = 0; k < 10; k++){
+            const m = C.PHASE2_MOVES[k];
+            const face = Math.floor(m / 3);
+            if(face === lastFace || face === lastFace - 3) continue;
+            p.moves2.push(m);
+            const found = this.phase2(p, C.cornerPermMove[cornerPerm * 18 + m], C.udEdgePermMove[udEdgePerm * 18 + m],
+                                      C.slicePermMove[slicePerm * 18 + m], depth - 1, face);
+            if(found) return true;
+            p.moves2.pop();
+            if(this.done) return false;
+        }
+        return false;
+    }
+
+    record(p){
+        let moves = p.moves1.concat(p.moves2);
+        if(moves.length >= this.bestLength) return;
+        if(p.inverted) moves = moves.reverse().map(m => Moves.inverse(m));
+        moves = moves.map(m => p.faceMap[Math.floor(m / 3)] * 3 + m % 3);
+        this.best = moves;
+        this.bestLength = moves.length;
+        if(this.bestLength <= this.stopLength) this.done = true;
+    }
+}
+
+//Mirror of "cube3 vectors COUNT --stop N --seed S": returns "facelets solution" lines.
+function solveVectors(count = 100, stop = 24, seed = 777){
+    const rng = new Random(seed);
+    const solver = new Solver();
+    const lines = [];
+    for(let i = 0; i < count; i++){
+        const cube = CubieCube.random(rng);
+        lines.push(cube.toFacelets() + " " + solver.solve(cube, 24, stop, 0));
+    }
+    return lines;
+}
+
+return {Corner, Edge, Face, FACE_NAMES, CORNER_FACELET, EDGE_FACELET, CORNER_COLOR, EDGE_COLOR, Random, CubieCube, Moves, Facelets, Coords, Pruning, Solver, solveVectors};
+})();
+
+const __m_geometry = (() => {
+//Geometry shared by the photo pipeline, the synthetic photo renderer and the
+//3D viewer: where every sticker sits in 3D, how a camera projects points,
+//which cube vertices make up the 7 keypoints of a corner photo, and the
+//homography that maps a face's 3x3 grid onto its photographed quadrilateral.
+const {CORNER_FACELET, CORNER_COLOR, FACE_NAMES} = __m_solver;
+//Axes: x towards R, y towards U, z towards F (right-handed). The cube spans
+//-1.5..1.5 on each axis, so sticker centres sit at -1, 0, 1 along a face.
+//For each face: outward normal, the direction in which the facelet column
+//grows and the direction in which the row grows. These follow the facelet
+//string convention (see Cube.h): U is read with B at the top, D with F at the
+//top, side faces with U at the top.
+const FACE_AXES = [
+    {n: [0, 1, 0], col: [1, 0, 0], row: [0, 0, 1]},   //U
+    {n: [1, 0, 0], col: [0, 0, -1], row: [0, -1, 0]}, //R
+    {n: [0, 0, 1], col: [1, 0, 0], row: [0, -1, 0]},  //F
+    {n: [0, -1, 0], col: [1, 0, 0], row: [0, 0, -1]}, //D
+    {n: [-1, 0, 0], col: [0, 0, 1], row: [0, -1, 0]}, //L
+    {n: [0, 0, -1], col: [-1, 0, 0], row: [0, -1, 0]} //B
+];
+
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const length = a => Math.sqrt(dot(a, a));
+const normalize = a => scale(a, 1 / length(a));
+
+//Rotates point p by angle (radians) around a unit axis (Rodrigues' formula).
+function rotateAround(p, axis, angle){
+    const c = Math.cos(angle), s = Math.sin(angle);
+    const k = axis;
+    return add(add(scale(p, c), scale(cross(k, p), s)), scale(k, dot(k, p) * (1 - c)));
+}
+
+//Centre of sticker (row, col) of a face, in 3D.
+function stickerCentre(face, row, col){
+    const ax = FACE_AXES[face];
+    return add(add(scale(ax.n, 1.5), scale(ax.col, col - 1)), scale(ax.row, row - 1));
+}
+
+//The four 3D corners of sticker (row, col), shrunk by "inset" on every side
+//(inset 0 gives the full 1x1 square, 0.05 leaves a thin gap).
+function stickerQuad(face, row, col, inset = 0.06){
+    const ax = FACE_AXES[face];
+    const c = stickerCentre(face, row, col);
+    const h = 0.5 - inset;
+    const u = scale(ax.col, h), v = scale(ax.row, h);
+    return [
+        sub(sub(c, u), v), add(sub(c, u), v), add(add(c, u), v), sub(add(c, u), v)
+    ];
+}
+
+//Which cubie position (x, y, z in {-1, 0, 1}) carries sticker (face, row, col).
+function stickerCubie(face, row, col){
+    const c = stickerCentre(face, row, col);
+    const ax = FACE_AXES[face];
+    return sub(c, scale(ax.n, 0.5)).map(Math.round);
+}
+
+//Simple pinhole camera. position/target/up in world units; focal in pixels.
+function makeCamera({position, target = [0, 0, 0], up = [0, 1, 0], focal, width, height}){
+    const forward = normalize(sub(target, position));
+    const right = normalize(cross(forward, up));
+    const trueUp = cross(right, forward);
+    return {
+        position, forward, right, up: trueUp, focal, width, height,
+        //Returns [x, y, depth] in pixels, y growing downwards like an image.
+        project(p){
+            const d = sub(p, position);
+            const z = dot(d, forward);
+            return [width / 2 + focal * dot(d, right) / z, height / 2 - focal * dot(d, trueUp) / z, z];
+        }
+    };
+}
+
+//A camera that looks at the origin from "direction" (any vector), rolled by
+//"roll" radians about its viewing axis. Used by the synthetic photos and the
+//3D viewer.
+function cameraFromDirection(direction, distance, roll, focal, width, height){
+    const dir = normalize(direction);
+    const position = scale(dir, distance);
+    let up = Math.abs(dir[1]) > 0.95 ? [0, 0, -1] : [0, 1, 0];
+    up = rotateAround(up, dir, roll);
+    return makeCamera({position, up, focal, width, height});
+}
+
+const opposite = face => (face + 3) % 6;
+
+//The corner cubie that touches these three faces (any order).
+function cornerWithFaces(a, b, c){
+    for(let i = 0; i < 8; i++){
+        const faces = CORNER_COLOR[i];
+        if(faces.includes(a) && faces.includes(b) && faces.includes(c)) return i;
+    }
+    throw new Error("no corner touches faces " + [a, b, c].map(f => FACE_NAMES[f]).join(""));
+}
+
+//Where corner cubie "corner" sits on face "face", as a facelet [row, col].
+function cornerCellOnFace(corner, face){
+    for(let k = 0; k < 3; k++){
+        if(CORNER_COLOR[corner][k] === face){
+            const idx = CORNER_FACELET[corner][k] % 9;
+            return [Math.floor(idx / 3), idx % 3];
+        }
+    }
+    throw new Error("corner does not touch that face");
+}
+
+//A corner photo shows three faces meeting at one vertex. Seen from outside,
+//going clockwise around that vertex, the faces are faces[0], faces[1],
+//faces[2]. For image face k the photographed quadrilateral is
+//[vertex, shared with the previous face, far corner, shared with the next face]
+//and this returns, for those four quad corners, the matching grid corner of
+//the face's 3x3 sticker grid as [x, y] with x along columns and y along rows,
+//each 0 or 3. That is what the homography needs.
+function faceGridCorners(faces, k){
+    const face = faces[k], prev = faces[(k + 2) % 3], next = faces[(k + 1) % 3];
+    const vertexCorner = cornerWithFaces(face, prev, next);
+    const sharedPrev = cornerWithFaces(face, prev, opposite(next));
+    const far = cornerWithFaces(face, opposite(prev), opposite(next));
+    const sharedNext = cornerWithFaces(face, opposite(prev), next);
+    return [vertexCorner, sharedPrev, far, sharedNext].map(corner => {
+        const [row, col] = cornerCellOnFace(corner, face);
+        return [col === 0 ? 0 : 3, row === 0 ? 0 : 3];
+    });
+}
+
+//Photo-relative grid of an image face: the quad [vertex, shared with the
+//previous face, far corner, shared with the next face] is mapped onto this
+//3x3 grid, so stickers can be read before knowing which cube face it is.
+const QUAD_GRID = [[0, 0], [3, 0], [3, 3], [0, 3]];
+
+//Where the photo-relative cell (qrow, qcol) of image face k ends up on the
+//cube face's own grid once the three faces are named: returns [row, col].
+function quadCellToFaceCell(faces, k, qrow, qcol){
+    const [g0, g1, , g3] = faceGridCorners(faces, k);
+    const fx = (qcol + 0.5) / 3, fy = (qrow + 0.5) / 3;
+    const x = g0[0] + fx * (g1[0] - g0[0]) + fy * (g3[0] - g0[0]);
+    const y = g0[1] + fx * (g1[1] - g0[1]) + fy * (g3[1] - g0[1]);
+    return [Math.floor(y), Math.floor(x)];
+}
+
+//Keypoints of a corner photo: {centre: [x, y], ring: [[x, y] x 6]}. The ring
+//goes clockwise on screen and ring[0] is a vertex joined to the centre by a
+//cube edge (so ring[0], ring[2], ring[4] are edge vertices and ring[1],
+//ring[3], ring[5] are the far corners of the three faces).
+//Image face k is the quad [centre, ring[2k], ring[2k+1], ring[2k+2]].
+function faceQuads(keypoints){
+    const {centre, ring} = keypoints;
+    const quads = [];
+    for(let k = 0; k < 3; k++){
+        quads.push([centre, ring[2 * k], ring[2 * k + 1], ring[(2 * k + 2) % 6]]);
+    }
+    return quads;
+}
+
+//Makes the ring clockwise on screen (y grows downwards) without changing
+//which vertices are edge vertices.
+function normalizeRing(keypoints){
+    const ring = keypoints.ring.slice();
+    let area = 0;
+    for(let i = 0; i < 6; i++){
+        const a = ring[i], b = ring[(i + 1) % 6];
+        area += a[0] * b[1] - b[0] * a[1];
+    }
+    //With y downwards, a clockwise polygon has positive signed area here.
+    if(area < 0){
+        const reversed = [ring[0], ring[5], ring[4], ring[3], ring[2], ring[1]];
+        return {centre: keypoints.centre, ring: reversed};
+    }
+    return {centre: keypoints.centre, ring};
+}
+
+//Index of the image face whose centroid is highest on screen; the faces are
+//then taken in clockwise order starting from it.
+function topFaceOrder(keypoints){
+    const quads = faceQuads(keypoints);
+    let top = 0, bestY = Infinity;
+    quads.forEach((q, k) => {
+        const y = (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4;
+        if(y < bestY){ bestY = y; top = k; }
+    });
+    return [top, (top + 1) % 3, (top + 2) % 3];
+}
+
+//Projective transform mapping four source points onto four destination
+//points (direct linear transform, solved as an 8x8 linear system).
+function homography(src, dst){
+    const A = [], b = [];
+    for(let i = 0; i < 4; i++){
+        const [x, y] = src[i], [X, Y] = dst[i];
+        A.push([x, y, 1, 0, 0, 0, -x * X, -y * X]); b.push(X);
+        A.push([0, 0, 0, x, y, 1, -x * Y, -y * Y]); b.push(Y);
+    }
+    const h = solveLinear(A, b);
+    return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function applyHomography(H, x, y){
+    const w = H[6] * x + H[7] * y + H[8];
+    return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w];
+}
+
+//Gaussian elimination with partial pivoting.
+function solveLinear(A, b){
+    const n = b.length;
+    const M = A.map((row, i) => row.concat([b[i]]));
+    for(let col = 0; col < n; col++){
+        let pivot = col;
+        for(let r = col + 1; r < n; r++) if(Math.abs(M[r][col]) > Math.abs(M[pivot][col])) pivot = r;
+        [M[col], M[pivot]] = [M[pivot], M[col]];
+        const p = M[col][col];
+        if(Math.abs(p) < 1e-12) throw new Error("degenerate keypoints");
+        for(let r = 0; r < n; r++){
+            if(r === col) continue;
+            const f = M[r][col] / p;
+            for(let c = col; c <= n; c++) M[r][c] -= f * M[col][c];
+        }
+    }
+    return M.map((row, i) => row[n] / row[i]);
+}
+
+//The 8 cube vertices, and the 7 keypoints seen from a corner: for corner
+//signs like [1, 1, 1] (URF) the near vertex is the centre and the six
+//vertices other than the far one form the ring.
+function cornerKeypoints3D(signs){
+    const s = 1.5;
+    const centre = signs.map(v => v * s);
+    const edgeVertices = [], farVertices = [];
+    for(let i = 0; i < 3; i++){
+        const e = centre.slice(); e[i] = -e[i];
+        edgeVertices.push(e);
+        const f = centre.map(v => -v); f[i] = -f[i];
+        farVertices.push(f);
+    }
+    return {centre, edgeVertices, farVertices};
+}
+
+//Projects the keypoints of a corner view and orders the ring clockwise on
+//screen starting from an edge vertex.
+function projectKeypoints(camera, signs){
+    const {centre, edgeVertices, farVertices} = cornerKeypoints3D(signs);
+    const c = camera.project(centre);
+    const pts = edgeVertices.map(p => ({p: camera.project(p), edge: true}))
+        .concat(farVertices.map(p => ({p: camera.project(p), edge: false})));
+    //Angle on screen (y downwards): sorting by increasing angle is clockwise.
+    pts.forEach(q => q.angle = Math.atan2(q.p[1] - c[1], q.p[0] - c[0]));
+    pts.sort((a, b) => a.angle - b.angle);
+    let start = pts.findIndex(q => q.edge);
+    const ring = [];
+    for(let i = 0; i < 6; i++) ring.push(pts[(start + i) % 6].p.slice(0, 2));
+    return {centre: c.slice(0, 2), ring};
+}
+
+return {FACE_AXES, add, sub, scale, dot, cross, length, normalize, rotateAround, stickerCentre, stickerQuad, stickerCubie, makeCamera, cameraFromDirection, opposite, cornerWithFaces, cornerCellOnFace, faceGridCorners, QUAD_GRID, quadCellToFaceCell, faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, solveLinear, cornerKeypoints3D, projectKeypoints};
+})();
+
+const __m_render = (() => {
+//Software renderer that draws a cube into an RGBA pixel buffer. It makes the
+//synthetic "sample photos" (so the app can be tried without a real cube) and
+//gives the tests a camera, lighting and framing they can vary. No canvas is
+//needed, so it also runs in Node.
+const {FACE_AXES, stickerQuad, cameraFromDirection, projectKeypoints, dot, normalize, sub, scale, add, cross, rotateAround} = __m_geometry;
+const {FACE_NAMES} = __m_solver;
+//Sticker colours of a typical cube, by face letter.
+const STICKER_RGB = {
+    U: [246, 246, 240], R: [196, 30, 58], F: [0, 158, 96],
+    D: [255, 213, 0], L: [255, 88, 0], B: [0, 81, 186]
+};
+
+function createImage(width, height){
+    return {width, height, data: new Uint8ClampedArray(width * height * 4)};
+}
+
+//Fills a convex polygon (screen points [x, y]) by testing pixel centres
+//against every edge. Fine for the few dozen polygons a photo needs.
+function fillConvex(image, points, rgb){
+    const {width, height, data} = image;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for(const [x, y] of points){
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    //Orientation of the polygon, so the inside test works either way round.
+    let area = 0;
+    for(let i = 0; i < points.length; i++){
+        const a = points[i], b = points[(i + 1) % points.length];
+        area += a[0] * b[1] - b[0] * a[1];
+    }
+    const sign = area >= 0 ? 1 : -1;
+    const x0 = Math.max(0, Math.floor(minX)), x1 = Math.min(width - 1, Math.ceil(maxX));
+    const y0 = Math.max(0, Math.floor(minY)), y1 = Math.min(height - 1, Math.ceil(maxY));
+    for(let y = y0; y <= y1; y++){
+        for(let x = x0; x <= x1; x++){
+            const px = x + 0.5, py = y + 0.5;
+            let inside = true;
+            for(let i = 0; i < points.length && inside; i++){
+                const a = points[i], b = points[(i + 1) % points.length];
+                const side = (b[0] - a[0]) * (py - a[1]) - (b[1] - a[1]) * (px - a[0]);
+                if(side * sign < 0) inside = false;
+            }
+            if(inside){
+                const o = (y * width + x) * 4;
+                data[o] = rgb[0]; data[o + 1] = rgb[1]; data[o + 2] = rgb[2]; data[o + 3] = 255;
+            }
+        }
+    }
+}
+
+//Convex hull of 2D points (Andrew's monotone chain), counterclockwise in
+//maths coordinates, which is clockwise on screen.
+function convexHull(points){
+    const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if(pts.length < 3) return pts;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [];
+    for(const p of pts){
+        while(lower.length >= 2 && cr(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+        lower.push(p);
+    }
+    const upper = [];
+    for(let i = pts.length - 1; i >= 0; i--){
+        const p = pts[i];
+        while(upper.length >= 2 && cr(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+        upper.push(p);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+}
+
+//Draws a cube given by its facelet string. Options:
+//  camera      from geometry.makeCamera / cameraFromDirection
+//  light       {direction: [x,y,z], ambient: 0..1, diffuse: 0..1, tint: [r,g,b] multipliers}
+//  background  [r,g,b] (a soft vignette is added)
+//  noise       amplitude of per-pixel noise, 0 for none
+//  rng         object with next() -> uint32, used for the noise
+//  palette     {U: [r,g,b], ...} sticker colours (defaults to STICKER_RGB)
+//  layer       optional animated layer {face, angle} for the 3D viewer
+function renderCube(facelets, image, options){
+    const {camera, light, background = [214, 212, 206], noise = 0, rng, palette = STICKER_RGB} = options;
+    const {width, height, data} = image;
+    //Background with a vignette so the cube silhouette has to be found.
+    for(let y = 0; y < height; y++){
+        for(let x = 0; x < width; x++){
+            const dx = (x - width / 2) / width, dy = (y - height / 2) / height;
+            const v = 1 - 0.5 * (dx * dx + dy * dy);
+            const o = (y * width + x) * 4;
+            data[o] = background[0] * v; data[o + 1] = background[1] * v; data[o + 2] = background[2] * v; data[o + 3] = 255;
+        }
+    }
+    const lightDir = normalize(light.direction);
+    const shade = n => Math.min(1, light.ambient + light.diffuse * Math.max(0, dot(n, lightDir)));
+    //Cube body: the convex hull of the 8 projected vertices, in dark plastic.
+    const vertices = [];
+    for(const sx of [-1.5, 1.5]) for(const sy of [-1.5, 1.5]) for(const sz of [-1.5, 1.5]) vertices.push([sx, sy, sz]);
+    fillConvex(image, convexHull(vertices.map(v => camera.project(v).slice(0, 2))), [28, 26, 26]);
+    //Visible faces, back to front is not needed: faces of a convex cube never overlap.
+    for(let face = 0; face < 6; face++){
+        const n = FACE_AXES[face].n;
+        const centre = scale(n, 1.5);
+        if(dot(n, sub(camera.position, centre)) <= 0) continue;
+        const s = shade(n);
+        for(let row = 0; row < 3; row++){
+            for(let col = 0; col < 3; col++){
+                const letter = facelets[face * 9 + row * 3 + col];
+                const base = palette[letter] || [120, 120, 120];
+                const rgb = [0, 1, 2].map(i => Math.min(255, base[i] * s * (light.tint ? light.tint[i] : 1)));
+                const quad = stickerQuad(face, row, col, 0.07).map(p => camera.project(p).slice(0, 2));
+                fillConvex(image, quad, rgb);
+            }
+        }
+    }
+    if(noise > 0 && rng){
+        for(let i = 0; i < data.length; i += 4){
+            const d = ((rng.next() % 2001) / 1000 - 1) * noise;
+            data[i] = Math.max(0, Math.min(255, data[i] + d));
+            data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + d));
+            data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + d));
+        }
+    }
+    return image;
+}
+
+//A random camera looking at the given corner (signs like [1,1,1] for URF),
+//tilted a little away from the exact diagonal and rolled by "roll".
+//spread is the maximum tilt in radians.
+function randomCornerCamera(signs, rng, {width, height, roll = null, spread = 0.35, distance = null, focal = null} = {}){
+    const unit = () => rng.next() / 4294967296;
+    const diag = normalize(signs);
+    //Two directions perpendicular to the diagonal for the tilt.
+    const helper = Math.abs(diag[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const a = normalize(cross(diag, helper)), b = cross(diag, a);
+    const t1 = (unit() * 2 - 1) * spread, t2 = (unit() * 2 - 1) * spread;
+    const direction = normalize(add(add(diag, scale(a, Math.tan(t1))), scale(b, Math.tan(t2))));
+    const dist = distance ?? 6.5 + unit() * 3;
+    //Framing: the cube spans roughly 55 to 80 percent of the shorter side.
+    const f = focal ?? (0.62 + unit() * 0.28) * Math.min(width, height) * dist / 6.5;
+    const r = roll ?? unit() * Math.PI * 2;
+    return cameraFromDirection(direction, dist, r, f, width, height);
+}
+
+//Renders one corner photo and also returns the exact keypoints, which the
+//tests use to separate colour problems from keypoint-detection problems.
+function renderCornerPhoto(facelets, signs, rng, options = {}){
+    const width = options.width || 320, height = options.height || 320;
+    const unit = () => rng.next() / 4294967296;
+    const camera = options.camera || randomCornerCamera(signs, rng, {width, height, roll: options.roll, spread: options.spread});
+    const light = options.light || {
+        direction: [unit() * 2 - 1, 0.5 + unit(), unit() * 2 - 1],
+        ambient: 0.35 + unit() * 0.25,
+        diffuse: 0.35 + unit() * 0.35,
+        tint: [0.92 + unit() * 0.12, 0.94 + unit() * 0.08, 0.88 + unit() * 0.18]
+    };
+    const background = options.background || [170 + unit() * 70, 170 + unit() * 70, 165 + unit() * 70];
+    const image = createImage(width, height);
+    renderCube(facelets, image, {camera, light, background, noise: options.noise ?? 6, rng, palette: options.palette});
+    return {image, camera, light, keypoints: projectKeypoints(camera, signs)};
+}
+
+//Draws the cube for the 3D viewer: every cubie as a small box so that a
+//layer can be turned part way. Returns polygons sorted far to near, each
+//{points, rgb, depth}, for a canvas to draw.
+function cubePolygons(facelets, camera, turning = null, palette = STICKER_RGB){
+    const polys = [];
+    const h = 0.47;//half size of a cubie box, leaving a gap
+    for(let x = -1; x <= 1; x++) for(let y = -1; y <= 1; y++) for(let z = -1; z <= 1; z++){
+        if(x === 0 && y === 0 && z === 0) continue;
+        const cubie = [x, y, z];
+        //Cubies in the turning layer are rotated part way about the face axis.
+        const inLayer = turning && cubie[turning.axisIndex] === turning.layer;
+        const transform = p => inLayer ? rotateAround(p, turning.axis, turning.angle) : p;
+        for(let face = 0; face < 6; face++){
+            const ax = FACE_AXES[face];
+            const centre = add(cubie, scale(ax.n, h));
+            const u = scale(ax.col, h), v = scale(ax.row, h);
+            //Only the outside of the cube is drawn, plus the two faces of the
+            //cut while a layer is turning. Faces buried inside the cube would
+            //only confuse the depth sort.
+            const outward = dot(ax.n, cubie) > 0.5;
+            let onCut = false;
+            if(turning){
+                const towards = ax.n[turning.axisIndex];//-1, 0 or +1 along the turning axis
+                const pos = cubie[turning.axisIndex];
+                onCut = (pos === turning.layer && towards === -turning.layer) || (pos === 0 && towards === turning.layer);
+            }
+            if(!outward && !onCut) continue;
+            const box = [sub(sub(centre, u), v), add(sub(centre, u), v), add(add(centre, u), v), sub(add(centre, u), v)].map(transform);
+            const worldNormal = transform(add(centre, ax.n)).map((c, i) => c - transform(centre)[i]);
+            const viewDot = dot(worldNormal, sub(camera.position, transform(centre)));
+            if(viewDot <= 0) continue;
+            const proj = box.map(p => camera.project(p));
+            const depth = proj.reduce((s, p) => s + p[2], 0) / 4;
+            polys.push({points: proj.map(p => [p[0], p[1]]), rgb: [30, 28, 28], depth: depth + 0.001});
+            if(outward){
+                const letter = facelets[face * 9 + (Math.round(dot(cubie, ax.row)) + 1) * 3 + (Math.round(dot(cubie, ax.col)) + 1)];
+                const s = 0.78 + 0.22 * Math.max(0, dot(normalize(worldNormal), normalize(sub(camera.position, [0, 0, 0]))));
+                const sticker = [sub(sub(centre, scale(u, 0.86)), scale(v, 0.86)), add(sub(centre, scale(u, 0.86)), scale(v, 0.86)),
+                                 add(add(centre, scale(u, 0.86)), scale(v, 0.86)), sub(add(centre, scale(u, 0.86)), scale(v, 0.86))]
+                    .map(transform).map(p => camera.project(p));
+                const base = palette[letter] || [120, 120, 120];
+                polys.push({points: sticker.map(p => [p[0], p[1]]), rgb: base.map(c => c * s), depth: depth});
+            }
+        }
+    }
+    polys.sort((a, b) => b.depth - a.depth);
+    return polys;
+}
+
+//Describes a part-way turn of one face for cubePolygons: a clockwise quarter
+//turn of face f is a rotation of -90 degrees about its outward normal.
+function turningLayer(move, fraction){
+    const face = Math.floor(move / 3), power = move % 3;
+    const ax = FACE_AXES[face];
+    const quarterTurns = power === 2 ? -1 : power + 1;//U: 1, U2: 2, U': -1
+    const axisIndex = ax.n.findIndex(c => c !== 0);
+    return {
+        axis: ax.n, axisIndex, layer: ax.n[axisIndex],
+        angle: -quarterTurns * (Math.PI / 2) * fraction
+    };
+}
+
+
+return {STICKER_RGB, createImage, fillConvex, convexHull, renderCube, randomCornerCamera, renderCornerPhoto, cubePolygons, turningLayer, FACE_NAMES};
+})();
+
+const __m_vision = (() => {
+//From two corner photos to a facelet string.
+//
+//  1. autoDetectKeypoints: a first guess at the 7 keypoints of a photo
+//     (the user can drag them afterwards).
+//  2. sampleFaces: a homography per visible face maps its 3x3 grid onto the
+//     photo, and the median colour of each sticker is read.
+//  3. groupColours: the 54 stickers are assigned to the 6 centre colours so
+//     that every colour gets exactly 9 stickers (minimum-cost assignment).
+//  4. reconstruct: photo 1 fixes U, R and F; the three remaining colours are
+//     tried in the three possible cyclic orders for D, B and L, and the
+//     candidate that is a valid cube wins. If none is valid, the cheapest
+//     swap of two stickers that makes one valid is applied.
+const {faceQuads, normalizeRing, topFaceOrder, homography, applyHomography, QUAD_GRID, quadCellToFaceCell} = __m_geometry;
+const {convexHull} = __m_render;
+const {CubieCube, FACE_NAMES, Face} = __m_solver;
+//---- colour --------------------------------------------------------------
+
+//sRGB (0..255) to CIE Lab, the usual way (D65 white).
+function rgbToLab(r, g, b){
+    const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const R = lin(r), G = lin(g), B = lin(b);
+    let x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047;
+    let y = (R * 0.2126 + G * 0.7152 + B * 0.0722) / 1.0;
+    let z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+    x = f(x); y = f(y); z = f(z);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+//Distance between two Lab colours. Lightness counts less than hue because
+//shading differs from face to face and photo to photo.
+function colourDistance(a, b){
+    const dl = (a[0] - b[0]) * 0.45, da = a[1] - b[1], db = a[2] - b[2];
+    return Math.sqrt(dl * dl + da * da + db * db);
+}
+
+//Lab of a sticker colour with the shading taken out: a face in shadow is
+//roughly the same colour multiplied by a constant, so scaling the brightest
+//channel up to 255 makes a dark orange look like orange again instead of
+//like red.
+function stickerLab(rgb){
+    const m = Math.max(rgb[0], rgb[1], rgb[2], 1);
+    const s = 255 / m;
+    return rgbToLab(rgb[0] * s, rgb[1] * s, rgb[2] * s);
+}
+
+function pixelAt(image, x, y){
+    const xi = Math.max(0, Math.min(image.width - 1, Math.round(x)));
+    const yi = Math.max(0, Math.min(image.height - 1, Math.round(y)));
+    const o = (yi * image.width + xi) * 4;
+    return [image.data[o], image.data[o + 1], image.data[o + 2]];
+}
+
+function median(values){
+    const s = values.slice().sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+}
+
+//---- step 2: sampling ------------------------------------------------------
+
+//Median colour of the middle of sticker (row, col) through homography H
+//(grid units: the face is 3x3, the sticker centre is at (col+.5, row+.5)).
+function sampleSticker(image, H, row, col){
+    const rs = [], gs = [], bs = [];
+    for(let dy = -0.22; dy <= 0.221; dy += 0.11){
+        for(let dx = -0.22; dx <= 0.221; dx += 0.11){
+            const [x, y] = applyHomography(H, col + 0.5 + dx, row + 0.5 + dy);
+            const [r, g, b] = pixelAt(image, x, y);
+            rs.push(r); gs.push(g); bs.push(b);
+        }
+    }
+    return [median(rs), median(gs), median(bs)];
+}
+
+//Reads the 27 stickers of one photo. Image faces are taken clockwise from
+//the top one; within a face, stickers are read in the photo-relative grid
+//(QUAD_GRID), because which cube face it is has not been decided yet.
+//Returns {order, faces: [{quad, H, stickers: [{rgb, lab, qrow, qcol}] x 9}] x 3}.
+function sampleFaces(image, keypoints){
+    const kp = normalizeRing(keypoints);
+    const quads = faceQuads(kp);
+    const order = topFaceOrder(kp);
+    const result = [];
+    for(let k = 0; k < 3; k++){
+        const quad = quads[order[k]];
+        const H = homography(QUAD_GRID, quad);
+        const stickers = [];
+        for(let qrow = 0; qrow < 3; qrow++){
+            for(let qcol = 0; qcol < 3; qcol++){
+                const rgb = sampleSticker(image, H, qrow, qcol);
+                stickers.push({rgb, lab: stickerLab(rgb), qrow, qcol});
+            }
+        }
+        result.push({quad, H, stickers});
+    }
+    return {order, faces: result};
+}
+
+//---- step 3: balanced grouping ---------------------------------------------
+
+//Hungarian algorithm (Kuhn-Munkres) for a square cost matrix. Returns
+//assignment[row] = column with the minimum total cost.
+function hungarian(cost){
+    const n = cost.length;
+    const INF = Number.MAX_VALUE;
+    const u = new Array(n + 1).fill(0), v = new Array(n + 1).fill(0);
+    const p = new Array(n + 1).fill(0), way = new Array(n + 1).fill(0);
+    for(let i = 1; i <= n; i++){
+        p[0] = i;
+        let j0 = 0;
+        const minv = new Array(n + 1).fill(INF);
+        const used = new Array(n + 1).fill(false);
+        do{
+            used[j0] = true;
+            const i0 = p[j0];
+            let delta = INF, j1 = 0;
+            for(let j = 1; j <= n; j++){
+                if(used[j]) continue;
+                const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+                if(cur < minv[j]){ minv[j] = cur; way[j] = j0; }
+                if(minv[j] < delta){ delta = minv[j]; j1 = j; }
+            }
+            for(let j = 0; j <= n; j++){
+                if(used[j]){ u[p[j]] += delta; v[j] -= delta; }
+                else minv[j] -= delta;
+            }
+            j0 = j1;
+        }while(p[j0] !== 0);
+        do{
+            const j1 = way[j0];
+            p[j0] = p[j1];
+            j0 = j1;
+        }while(j0);
+    }
+    const assignment = new Array(n);
+    for(let j = 1; j <= n; j++) if(p[j] > 0) assignment[p[j] - 1] = j - 1;
+    return assignment;
+}
+
+//stickers: array of {lab} (54 of them). centres: indices into that array of
+//the six centre stickers, which define the six colour classes 0..5.
+//Every class receives exactly 9 stickers, the centre always its own class.
+//Returns {labels: class per sticker, cost: total distance, distances}.
+function groupColours(stickers, centres){
+    const n = stickers.length;
+    const perClass = n / centres.length;
+    const distances = stickers.map(s => centres.map(c => colourDistance(s.lab, stickers[c].lab)));
+    const cost = [];
+    for(let i = 0; i < n; i++){
+        const row = [];
+        const centreClass = centres.indexOf(i);
+        for(let j = 0; j < n; j++){
+            const cls = Math.floor(j / perClass);
+            if(centreClass >= 0) row.push(cls === centreClass ? 0 : 1e6);
+            else row.push(distances[i][cls]);
+        }
+        cost.push(row);
+    }
+    const assignment = hungarian(cost);
+    const labels = assignment.map(j => Math.floor(j / perClass));
+    let total = 0;
+    labels.forEach((cls, i) => { if(!centres.includes(i)) total += distances[i][cls]; });
+    return {labels, cost: total, distances};
+}
+
+//---- step 4: facelet string ------------------------------------------------
+
+const {U, R, F, D, L, B} = Face;
+//Photo 1 shows U, R, F clockwise from the top. Photo 2 shows the three
+//other faces; which of them is D, B or L depends on how the cube was
+//flipped, so these three cyclic orders are the candidates.
+const PHOTO1_FACES = [U, R, F];
+const PHOTO2_CANDIDATES = [[D, B, L], [B, L, D], [L, D, B]];
+
+//Positions of the 54 samples: photo p (0/1), image face k (0..2 clockwise
+//from top), photo-relative cell q (qrow*3+qcol). Sample index = p*27 + k*9 + q.
+//Returns the facelet index each sample lands on for a given face naming.
+function sampleFaceletIndex(p, k, q, photo2Faces){
+    const faces = p === 0 ? PHOTO1_FACES : photo2Faces;
+    const [row, col] = quadCellToFaceCell(faces, k, Math.floor(q / 3), q % 3);
+    return faces[k] * 9 + row * 3 + col;
+}
+
+//Turns sample labels into a facelet string. labels[i] is a class 0..5
+//(0..2 = centres of photo 1 faces, 3..5 = centres of photo 2 faces).
+function faceletsFromLabels(labels, photo2Faces){
+    const classFace = [...PHOTO1_FACES, ...photo2Faces];
+    const facelets = new Array(54).fill("?");
+    for(let i = 0; i < 54; i++){
+        const p = Math.floor(i / 27), k = Math.floor((i % 27) / 9), s = i % 9;
+        facelets[sampleFaceletIndex(p, k, s, photo2Faces)] = FACE_NAMES[classFace[labels[i]]];
+    }
+    return facelets.join("");
+}
+
+//photo1, photo2: results of sampleFaces. Returns
+//{facelets, valid, message, photo2Faces, labels, swapped, classRgb}.
+function reconstruct(photo1, photo2){
+    const stickers = [];
+    for(const photo of [photo1, photo2]) for(const face of photo.faces) for(const st of face.stickers) stickers.push(st);
+    const centres = [4, 13, 22, 31, 40, 49];//sample index of each face's middle sticker
+    const grouping = groupColours(stickers, centres);
+    const classRgb = centres.map(c => stickers[c].rgb);
+    //Try the three namings of photo 2.
+    let best = null;
+    for(const photo2Faces of PHOTO2_CANDIDATES){
+        const facelets = faceletsFromLabels(grouping.labels, photo2Faces);
+        const problem = CubieCube.fromFacelets(facelets).verify();
+        const candidate = {facelets, valid: problem === "", problem, photo2Faces, labels: grouping.labels, swapped: null};
+        if(candidate.valid){ best = candidate; break; }
+        if(!best) best = candidate;
+    }
+    if(!best.valid){
+        //Repair: swap the two stickers whose exchange costs least and makes
+        //a valid cube. Centres stay fixed.
+        let bestSwap = null;
+        for(const photo2Faces of PHOTO2_CANDIDATES){
+            for(let i = 0; i < 54; i++){
+                if(centres.includes(i)) continue;
+                for(let j = i + 1; j < 54; j++){
+                    if(centres.includes(j) || grouping.labels[i] === grouping.labels[j]) continue;
+                    const li = grouping.labels[i], lj = grouping.labels[j];
+                    const extra = grouping.distances[i][lj] + grouping.distances[j][li] - grouping.distances[i][li] - grouping.distances[j][lj];
+                    if(bestSwap && extra >= bestSwap.extra) continue;
+                    const labels = grouping.labels.slice();
+                    labels[i] = lj; labels[j] = li;
+                    const facelets = faceletsFromLabels(labels, photo2Faces);
+                    if(CubieCube.fromFacelets(facelets).verify() === ""){
+                        bestSwap = {extra, facelets, labels, photo2Faces, swapped: [i, j]};
+                    }
+                }
+            }
+        }
+        if(bestSwap){
+            best = {facelets: bestSwap.facelets, valid: true, problem: "", photo2Faces: bestSwap.photo2Faces,
+                    labels: bestSwap.labels, swapped: bestSwap.swapped};
+        }
+    }
+    best.classRgb = classRgb;
+    best.message = best.valid
+        ? (best.swapped ? "Valid cube after swapping two stickers that looked alike. Check them in the net below." : "Valid cube.")
+        : "This is not a valid cube: " + best.problem + ". Fix the stickers in the net below.";
+    return best;
+}
+
+//---- step 1: keypoint detection ----------------------------------------------
+
+//Best-effort guess of the 7 keypoints. The cube is assumed to be the big
+//object in the middle that differs from the colour of the image border.
+//Returns {centre, ring} in image pixels, or a default hexagon if nothing
+//cube-like is found.
+function autoDetectKeypoints(image){
+    const {width, height} = image;
+    //Work on a reduced image for speed.
+    const step = Math.max(1, Math.floor(Math.max(width, height) / 160));
+    const w = Math.floor(width / step), h = Math.floor(height / step);
+    const px = (x, y) => pixelAt(image, x * step + step / 2, y * step + step / 2);
+    //Background colour: median of a frame along the border.
+    const frame = [];
+    const margin = Math.max(1, Math.floor(Math.min(w, h) * 0.04));
+    for(let y = 0; y < h; y++) for(let x = 0; x < w; x++){
+        if(x < margin || y < margin || x >= w - margin || y >= h - margin) frame.push(px(x, y));
+    }
+    const bg = [0, 1, 2].map(c => median(frame.map(p => p[c])));
+    //Mask of pixels that are not background: a different hue, or a lot
+    //darker or brighter. Mild shading of the background (a vignette, a
+    //gradient on the table) should not count, so brightness needs a big gap.
+    const mask = new Uint8Array(w * h);
+    const bgSum = bg[0] + bg[1] + bg[2] + 1;
+    for(let y = 0; y < h; y++) for(let x = 0; x < w; x++){
+        const p = px(x, y);
+        const sum = p[0] + p[1] + p[2] + 1;
+        let hueDiff = 0;
+        for(let c = 0; c < 3; c++) hueDiff += Math.abs(p[c] / sum - bg[c] / bgSum);
+        const brightnessDiff = Math.abs(sum - bgSum) / 3;
+        //Very dark pixels are the cube's plastic body, whatever the background.
+        const dark = sum < 0.45 * bgSum && sum < 240;
+        mask[y * w + x] = (hueDiff > 0.16 || brightnessDiff > 70 || dark) ? 1 : 0;
+    }
+    //Largest connected component (4-neighbour flood fill).
+    const comp = new Int32Array(w * h).fill(-1);
+    let bestComp = -1, bestSize = 0, count = 0;
+    const stack = [];
+    for(let start = 0; start < w * h; start++){
+        if(!mask[start] || comp[start] >= 0) continue;
+        let size = 0;
+        stack.push(start); comp[start] = count;
+        while(stack.length){
+            const i = stack.pop(); size++;
+            const x = i % w, y = Math.floor(i / w);
+            for(const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]){
+                if(nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                const j = ny * w + nx;
+                if(mask[j] && comp[j] < 0){ comp[j] = count; stack.push(j); }
+            }
+        }
+        if(size > bestSize){ bestSize = size; bestComp = count; }
+        count++;
+    }
+    if(bestSize < w * h * 0.02) return defaultKeypoints(width, height);
+    //Close small holes between stickers by taking the convex hull of the blob.
+    const pts = [];
+    for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) if(comp[y * w + x] === bestComp) pts.push([x * step + step / 2, y * step + step / 2]);
+    const hull = convexHull(pts);
+    const hex = hexagonFromHull(hull);
+    if(!hex) return defaultKeypoints(width, height);
+    return hexagonToKeypoints(hex, image);
+}
+
+function defaultKeypoints(width, height){
+    const cx = width / 2, cy = height / 2, r = Math.min(width, height) * 0.36;
+    const ring = [];
+    for(let i = 0; i < 6; i++){
+        const a = -Math.PI / 2 + i * Math.PI / 3;
+        ring.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    return {centre: [cx, cy], ring};
+}
+
+//Reduces a convex polygon to the 6 of its vertices that enclose the largest
+//area. The silhouette of a cube seen from a corner is a hexagon, and the
+//six real corners enclose more area than any six noise points along the
+//edges. Dynamic programming over the hull order, trying every start vertex.
+function hexagonFromHull(hull){
+    const n = hull.length;
+    if(n < 6) return null;
+    if(n === 6) return hull.map(p => p.slice());
+    const tri = (a, b, c) => Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2;
+    let bestArea = -1, bestHex = null;
+    for(let s = 0; s < n; s++){
+        //dp[m][j]: largest area of a fan of m vertices from s ending at s+j; from[m][j] remembers the previous one.
+        const dp = [], from = [];
+        for(let m = 0; m <= 6; m++){ dp.push(new Array(n).fill(-1)); from.push(new Array(n).fill(-1)); }
+        dp[1][0] = 0;
+        for(let m = 2; m <= 6; m++){
+            for(let j = m - 1; j < n; j++){
+                for(let i = m - 2; i < j; i++){
+                    if(dp[m - 1][i] < 0) continue;
+                    const area = dp[m - 1][i] + (m === 2 ? 0 : tri(hull[s], hull[(s + i) % n], hull[(s + j) % n]));
+                    if(area > dp[m][j]){ dp[m][j] = area; from[m][j] = i; }
+                }
+            }
+        }
+        for(let j = 5; j < n; j++){
+            if(dp[6][j] > bestArea){
+                bestArea = dp[6][j];
+                const idx = [];
+                let m = 6, cur = j;
+                while(m >= 1){ idx.push((s + cur) % n); cur = from[m][cur]; m--; }
+                bestHex = idx.reverse().map(k => hull[k].slice());
+            }
+        }
+    }
+    return bestHex;
+}
+
+//Decides which three hexagon vertices are joined to the near vertex and
+//where that near vertex is. Each visible face is roughly a parallelogram,
+//so edge_k + edge_{k+1} - far_between_them estimates the near vertex. The
+//three cube edges that meet there are dark lines (the gaps between the
+//stickers of neighbouring faces), so for each parity the estimate is refined
+//to the point whose three segments to the candidate edge vertices are
+//darkest, and the parity with the darker segments wins.
+function hexagonToKeypoints(hex, image){
+    const size = Math.max(...hex.map(p => Math.hypot(p[0] - hex[0][0], p[1] - hex[0][1])));
+    //Point-in-hexagon test that works whichever way round the hull goes:
+    //inside points are on the same side of every edge as the polygon itself.
+    let orientation = 0;
+    for(let i = 0; i < 6; i++){
+        const a = hex[i], b = hex[(i + 1) % 6];
+        orientation += a[0] * b[1] - b[0] * a[1];
+    }
+    const inside = p => {
+        for(let i = 0; i < 6; i++){
+            const a = hex[i], b = hex[(i + 1) % 6];
+            const side = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+            if(side * orientation < 0) return false;
+        }
+        return true;
+    };
+    let best = null;
+    for(const parity of [0, 1]){
+        const edges = [hex[parity % 6], hex[(parity + 2) % 6], hex[(parity + 4) % 6]];
+        const estimates = [];
+        for(let k = 0; k < 3; k++){
+            const e1 = hex[(parity + 2 * k) % 6], far = hex[(parity + 2 * k + 1) % 6], e2 = hex[(parity + 2 * k + 2) % 6];
+            estimates.push([e1[0] + e2[0] - far[0], e1[1] + e2[1] - far[1]]);
+        }
+        const guess = [0, 1].map(c => estimates.reduce((s, e) => s + e[c], 0) / 3);
+        let centre = guess;
+        let darkest = Infinity;
+        if(image){
+            //Brightness of the three segments plus a pull towards the
+            //parallelogram guess, so the search does not settle on the
+            //cube's outline, which is a dark line as well.
+            const score = c => edges.reduce((s, e) => s + segmentBrightness(image, c, e), 0)
+                + 500 * Math.hypot(c[0] - guess[0], c[1] - guess[1]) / size;
+            //Coarse search over the hexagon, then a fine search around the best spot.
+            const xs = hex.map(p => p[0]), ys = hex.map(p => p[1]);
+            const coarse = Math.max(2, size / 22);
+            for(let y = Math.min(...ys); y <= Math.max(...ys); y += coarse){
+                for(let x = Math.min(...xs); x <= Math.max(...xs); x += coarse){
+                    if(!inside([x, y])) continue;
+                    const b = score([x, y]);
+                    if(b < darkest){ darkest = b; centre = [x, y]; }
+                }
+            }
+            const start = centre;
+            for(let dy = -coarse; dy <= coarse; dy += 1){
+                for(let dx = -coarse; dx <= coarse; dx += 1){
+                    const c = [start[0] + dx, start[1] + dy];
+                    const b = score(c);
+                    if(b < darkest){ darkest = b; centre = c; }
+                }
+            }
+        }else{
+            darkest = parity;
+        }
+        if(!best || darkest < best.darkest) best = {darkest, parity, centre};
+    }
+    const ring = [];
+    for(let i = 0; i < 6; i++) ring.push(hex[(best.parity + i) % 6].slice());
+    return normalizeRing({centre: best.centre, ring});
+}
+
+//Mean brightness along the middle part of the segment a-b.
+function segmentBrightness(image, a, b){
+    let sum = 0, n = 0;
+    for(let t = 0.15; t <= 0.85; t += 0.035){
+        const p = pixelAt(image, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+        sum += p[0] + p[1] + p[2];
+        n++;
+    }
+    return sum / n;
+}
+
+return {rgbToLab, colourDistance, stickerLab, sampleSticker, sampleFaces, hungarian, groupColours, PHOTO1_FACES, PHOTO2_CANDIDATES, sampleFaceletIndex, reconstruct, autoDetectKeypoints, defaultKeypoints, hexagonFromHull, hexagonToKeypoints};
+})();
+
+const __m_cube3d = (() => {
+//The animated 3D cube: draws the cube on a 2D canvas with the painter's
+//algorithm (cubePolygons sorts the little boxes far to near) and animates
+//one face turn at a time. The default viewpoint is the one of photo 1: the
+//U, R and F faces, seen from the URF corner.
+const {cameraFromDirection, normalize, rotateAround, cross} = __m_geometry;
+const {cubePolygons, turningLayer, STICKER_RGB} = __m_render;
+const {Facelets} = __m_solver;
+class CubeView{
+    constructor(canvas){
+        this.canvas = canvas;
+        this.ctx = canvas.getContext("2d");
+        this.facelets = Facelets.SOLVED;
+        this.palette = STICKER_RGB;
+        this.direction = [1, 0.95, 1.05];//where the camera sits, relative to the cube
+        this.turn = null;//{move, start, duration, resolve} while a face is turning
+        this.reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+        this.installOrbit();
+        if(typeof ResizeObserver !== "undefined") new ResizeObserver(() => this.draw()).observe(canvas);
+        this.draw();
+    }
+
+    setFacelets(facelets){
+        this.facelets = facelets;
+        this.draw();
+    }
+
+    setPalette(palette){
+        this.palette = palette;
+        this.draw();
+    }
+
+    //Drag to look around the cube.
+    installOrbit(){
+        let last = null;
+        this.canvas.addEventListener("pointerdown", e => { last = [e.clientX, e.clientY]; this.canvas.setPointerCapture(e.pointerId); });
+        this.canvas.addEventListener("pointermove", e => {
+            if(!last) return;
+            const dx = e.clientX - last[0], dy = e.clientY - last[1];
+            last = [e.clientX, e.clientY];
+            let d = rotateAround(this.direction, [0, 1, 0], -dx * 0.01);
+            const right = normalize(cross([0, 1, 0], d));
+            d = rotateAround(d, right, dy * 0.01);
+            //Keep the camera off the poles so "up" stays meaningful.
+            if(Math.abs(normalize(d)[1]) < 0.97) this.direction = d;
+            this.draw();
+        });
+        const stop = () => { last = null; };
+        this.canvas.addEventListener("pointerup", stop);
+        this.canvas.addEventListener("pointercancel", stop);
+    }
+
+    draw(){
+        const canvas = this.canvas, ctx = this.ctx;
+        const dpr = (typeof devicePixelRatio === "number" ? devicePixelRatio : 1);
+        const cssW = canvas.clientWidth || 320, cssH = canvas.clientHeight || 320;
+        if(canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)){
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+        }
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+        const distance = 9;
+        const focal = 1.35 * Math.min(w, h);
+        const camera = cameraFromDirection(this.direction, distance, 0, focal, w, h);
+        let turning = null;
+        if(this.turn){
+            const t = Math.min(1, (performance.now() - this.turn.start) / this.turn.duration);
+            const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            turning = turningLayer(this.turn.move, eased);
+        }
+        const polys = cubePolygons(this.facelets, camera, turning, this.palette);
+        for(const p of polys){
+            ctx.beginPath();
+            ctx.moveTo(p.points[0][0], p.points[0][1]);
+            for(let i = 1; i < 4; i++) ctx.lineTo(p.points[i][0], p.points[i][1]);
+            ctx.closePath();
+            const colour = `rgb(${p.rgb.map(c => Math.round(c)).join(",")})`;
+            ctx.fillStyle = colour;
+            ctx.strokeStyle = colour;
+            ctx.lineWidth = 1;
+            ctx.fill();
+            ctx.stroke();//hides the hairline seams between polygons
+        }
+    }
+
+    //Animates one move and applies it to the facelets when done.
+    animateMove(move, duration = 600){
+        if(this.turn) return Promise.resolve();
+        if(this.reducedMotion || duration <= 0){
+            this.facelets = Facelets.applyMove(this.facelets, move);
+            this.draw();
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            this.turn = {move, start: performance.now(), duration, resolve};
+            const frame = () => {
+                if(!this.turn) return;
+                const done = performance.now() - this.turn.start >= this.turn.duration;
+                if(done){
+                    const t = this.turn;
+                    this.turn = null;
+                    this.facelets = Facelets.applyMove(this.facelets, t.move);
+                    this.draw();
+                    t.resolve();
+                }else{
+                    this.draw();
+                    requestAnimationFrame(frame);
+                }
+            };
+            requestAnimationFrame(frame);
+        });
+    }
+}
+
+return {CubeView};
+})();
+
+const __m_app = (() => {
+//Page logic: photos in, keypoints, sticker net, solve, playback.
+const {CubieCube, Random, Facelets, Moves, FACE_NAMES, Solver} = __m_solver;
+const {faceQuads, normalizeRing, topFaceOrder, applyHomography} = __m_geometry;
+const {renderCornerPhoto, STICKER_RGB} = __m_render;
+const {sampleFaces, reconstruct, autoDetectKeypoints, defaultKeypoints, PHOTO1_FACES, sampleFaceletIndex} = __m_vision;
+const {CubeView} = __m_cube3d;
+const $ = id => document.getElementById(id);
+
+const state = {
+    photos: [null, null],      //{image, keypoints, canvas, samples, sample: bool}
+    facelets: null,            //current 54-letter string shown in the net
+    classRgb: null,            //colour of each face's centre, as read from the photos
+    selectedColour: 0,         //face index used when painting stickers
+    solution: null,            //array of move indices
+    solveStart: null,          //facelets the solution starts from
+    busy: false
+};
+
+//---- solver in a worker ----------------------------------------------------
+
+const solverLink = (() => {
+    let worker = null, ready = false, nextId = 1;
+    const pending = new Map();
+    const fallback = {solver: null};
+    const status = $("solver-status");
+    function startWorker(){
+        try{
+            const inline = document.getElementById("worker-source");
+            if(inline){
+                //Single-file build: the worker code is embedded in the page.
+                const blob = new Blob([inline.textContent], {type: "text/javascript"});
+                worker = new Worker(URL.createObjectURL(blob));
+            }else{
+                worker = new Worker(new URL("./worker.js", import.meta.url), {type: "module"});
+            }
+            worker.onmessage = e => {
+                const msg = e.data;
+                if(msg.type === "ready"){
+                    ready = true;
+                    status.textContent = `Solver ready (tables built in ${(msg.ms / 1000).toFixed(1)} s).`;
+                    document.dispatchEvent(new Event("solver-ready"));
+                }else if(msg.type === "solution" || msg.type === "error"){
+                    const p = pending.get(msg.id);
+                    pending.delete(msg.id);
+                    if(!p) return;
+                    if(msg.type === "error") p.reject(new Error(msg.message));
+                    else p.resolve(msg);
+                }
+            };
+            worker.onerror = () => {
+                worker = null;
+                status.textContent = "Worker unavailable, solving on the main thread.";
+                mainThreadReady();
+            };
+            worker.postMessage({type: "init"});
+            status.textContent = "Building the solver's tables in the background...";
+        }catch(err){
+            worker = null;
+            mainThreadReady();
+        }
+    }
+    function mainThreadReady(){
+        if(!fallback.solver){
+            const t = Date.now();
+            fallback.solver = new Solver();
+            status.textContent = `Solver ready on the main thread (tables built in ${((Date.now() - t) / 1000).toFixed(1)} s).`;
+        }
+        ready = true;
+        document.dispatchEvent(new Event("solver-ready"));
+    }
+    return {
+        start: startWorker,
+        isReady: () => ready,
+        solve(facelets, maxLength, stopLength, timeMs){
+            if(worker){
+                return new Promise((resolve, reject) => {
+                    const id = nextId++;
+                    pending.set(id, {resolve, reject});
+                    worker.postMessage({type: "solve", id, facelets, maxLength, stopLength, timeMs});
+                });
+            }
+            mainThreadReady();
+            const t = Date.now();
+            const moves = fallback.solver.solve(facelets, maxLength, stopLength, timeMs);
+            return Promise.resolve({moves, ms: Date.now() - t});
+        }
+    };
+})();
+
+//---- photos ----------------------------------------------------------------
+
+const PHOTO_HINTS = [
+    "Hold the cube so one corner points at the camera: the face you want to call the top, and the two faces below it.",
+    "Flip the cube to the corner diagonally opposite and photograph its three faces. Any way round is fine."
+];
+
+function setPhoto(index, image, sample){
+    const photo = {image, keypoints: autoDetectKeypoints(image), canvas: $(`photo-canvas-${index}`), samples: null, sample};
+    state.photos[index] = photo;
+    $(`photo-card-${index}`).classList.add("has-photo");
+    $(`photo-badge-${index}`).textContent = sample ? "synthetic sample" : "your photo";
+    drawPhoto(index);
+    rebuildFromPhotos();
+}
+
+//Draws the photo, the three face outlines and the seven draggable points.
+function drawPhoto(index){
+    const photo = state.photos[index];
+    if(!photo) return;
+    const {image, canvas} = photo;
+    if(canvas.width !== image.width || canvas.height !== image.height){
+        canvas.width = image.width;
+        canvas.height = image.height;
+    }
+    const ctx = canvas.getContext("2d");
+    const imageData = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+    ctx.putImageData(imageData, 0, 0);
+    const kp = normalizeRing(photo.keypoints);
+    const quads = faceQuads(kp);
+    const order = topFaceOrder(kp);
+    const scale = Math.max(1, image.width / 360);
+    ctx.lineWidth = 2 * scale;
+    ctx.lineJoin = "round";
+    //Face outlines.
+    quads.forEach(q => {
+        ctx.beginPath();
+        ctx.moveTo(q[0][0], q[0][1]);
+        for(let i = 1; i < 4; i++) ctx.lineTo(q[i][0], q[i][1]);
+        ctx.closePath();
+        ctx.strokeStyle = "rgba(255,255,255,0.9)";
+        ctx.stroke();
+    });
+    //Sampled sticker colours, as small discs where the stickers are read.
+    if(photo.samples){
+        photo.samples.faces.forEach(face => {
+            face.stickers.forEach(st => {
+                const [x, y] = applyHomography(face.H, st.qcol + 0.5, st.qrow + 0.5);
+                ctx.beginPath();
+                ctx.arc(x, y, 5 * scale, 0, Math.PI * 2);
+                ctx.fillStyle = `rgb(${st.rgb.join(",")})`;
+                ctx.fill();
+                ctx.strokeStyle = "rgba(0,0,0,0.6)";
+                ctx.lineWidth = 1 * scale;
+                ctx.stroke();
+            });
+        });
+        ctx.lineWidth = 2 * scale;
+    }
+    //Face names, once the cube has been reconstructed.
+    const naming = photo.naming;
+    if(naming){
+        ctx.font = `bold ${16 * scale}px "IBM Plex Mono", monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        order.forEach((quadIndex, k) => {
+            const q = quads[quadIndex];
+            const cx = q.reduce((s, p) => s + p[0], 0) / 4, cy = q.reduce((s, p) => s + p[1], 0) / 4;
+            //Put the label at the far corner side so it does not hide the centre sticker.
+            const lx = cx + (q[2][0] - cx) * 0.55, ly = cy + (q[2][1] - cy) * 0.55;
+            ctx.fillStyle = "rgba(0,0,0,0.65)";
+            ctx.beginPath();
+            ctx.arc(lx, ly, 12 * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.fillText(FACE_NAMES[naming[k]], lx, ly);
+        });
+    }
+    //Keypoints: the near corner is a ring, the six outer corners are dots.
+    const drawPoint = (p, kind) => {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], (kind === "centre" ? 9 : 7) * scale, 0, Math.PI * 2);
+        ctx.fillStyle = kind === "centre" ? "rgba(255,255,255,0.95)" : (kind === "edge" ? "#ff3d8f" : "#ffd23f");
+        ctx.fill();
+        ctx.strokeStyle = "rgba(0,0,0,0.75)";
+        ctx.lineWidth = 2 * scale;
+        ctx.stroke();
+        if(kind === "centre"){
+            ctx.beginPath();
+            ctx.arc(p[0], p[1], 3 * scale, 0, Math.PI * 2);
+            ctx.fillStyle = "#000";
+            ctx.fill();
+        }
+    };
+    kp.ring.forEach((p, i) => drawPoint(p, i % 2 === 0 ? "edge" : "far"));
+    drawPoint(kp.centre, "centre");
+    updatePhotoStatus(index);
+}
+
+//Dragging the keypoints with the pointer.
+function installDragging(index){
+    const canvas = $(`photo-canvas-${index}`);
+    let dragging = null;
+    const toImage = e => {
+        const r = canvas.getBoundingClientRect();
+        return [(e.clientX - r.left) * canvas.width / r.width, (e.clientY - r.top) * canvas.height / r.height];
+    };
+    canvas.addEventListener("pointerdown", e => {
+        const photo = state.photos[index];
+        if(!photo) return;
+        const p = toImage(e);
+        const kp = photo.keypoints;
+        const candidates = [{key: "centre", pt: kp.centre}].concat(kp.ring.map((pt, i) => ({key: i, pt})));
+        let best = null;
+        for(const c of candidates){
+            const d = Math.hypot(c.pt[0] - p[0], c.pt[1] - p[1]);
+            if(d < 30 * canvas.width / canvas.getBoundingClientRect().width && (!best || d < best.d)) best = {...c, d};
+        }
+        if(best){
+            dragging = best.key;
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+        }
+    });
+    canvas.addEventListener("pointermove", e => {
+        if(dragging === null) return;
+        const photo = state.photos[index];
+        const p = toImage(e);
+        const clamp = [Math.max(0, Math.min(canvas.width - 1, p[0])), Math.max(0, Math.min(canvas.height - 1, p[1]))];
+        if(dragging === "centre") photo.keypoints.centre = clamp;
+        else photo.keypoints.ring[dragging] = clamp;
+        drawPhoto(index);
+    });
+    const finish = () => {
+        if(dragging === null) return;
+        dragging = null;
+        rebuildFromPhotos();
+    };
+    canvas.addEventListener("pointerup", finish);
+    canvas.addEventListener("pointercancel", finish);
+}
+
+//Loads a photo file into an RGBA buffer, scaled down to a sensible size.
+function loadPhotoFile(index, file){
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+        const maxSide = 560;
+        const s = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const w = Math.max(1, Math.round(img.width * s)), h = Math.max(1, Math.round(img.height * s));
+        const off = document.createElement("canvas");
+        off.width = w; off.height = h;
+        const ctx = off.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h);
+        URL.revokeObjectURL(url);
+        setPhoto(index, {width: w, height: h, data: data.data}, false);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); setMessage("That file could not be read as an image.", "bad"); };
+    img.src = url;
+}
+
+//Two synthetic photos of a random scramble, so the flow can be tried
+//without a cube. The automatic keypoint guess fails on roughly one render
+//in ten, so a few seeds are tried until the photos read as a valid cube;
+//real photos get no such second chance, which is what the net is for.
+function useSamplePhotos(seed){
+    let chosen = null;
+    for(let attempt = 0; attempt < 8 && !chosen; attempt++){
+        const rng = new Random(seed + attempt * 7919);
+        const cube = CubieCube.random(rng);
+        const facelets = cube.toFacelets();
+        const p1 = renderCornerPhoto(facelets, [1, 1, 1], rng, {width: 420, height: 420, spread: 0.25, roll: (rng.next() % 1000) / 1000 - 0.5});
+        const p2 = renderCornerPhoto(facelets, [-1, -1, -1], rng, {width: 420, height: 420, spread: 0.25});
+        const k1 = autoDetectKeypoints(p1.image), k2 = autoDetectKeypoints(p2.image);
+        let ok = false;
+        try{
+            const result = reconstruct(sampleFaces(p1.image, k1), sampleFaces(p2.image, k2));
+            ok = result.valid && !result.swapped;
+        }catch(err){ ok = false; }
+        if(ok || attempt === 7) chosen = {p1, p2};
+    }
+    setPhoto(0, chosen.p1.image, true);
+    setPhoto(1, chosen.p2.image, true);
+}
+
+//---- progress stepper and photo status -------------------------------------
+
+//The sticky stepper shows what each step is waiting for.
+function updateStepper(){
+    const photos = state.photos.filter(Boolean).length;
+    const valid = state.facelets ? CubieCube.fromFacelets(state.facelets).verify() === "" : false;
+    const solved = Boolean(state.solution);
+    setStep(1, photos === 2 ? "done" : "current", photos === 2 ? "2 of 2 read" : `${photos} of 2`);
+    setStep(2, photos < 2 ? "" : (valid ? "done" : "current"), photos < 2 ? "Waiting for photos" : (valid ? "Valid cube" : "Fix the stickers"));
+    setStep(3, solved ? "done" : (valid ? "current" : ""), solved ? `${state.solution.length} moves` : (valid ? "Ready to solve" : "Needs a valid cube"));
+}
+
+function setStep(n, cls, text){
+    $(`stepper-${n}`).className = cls;
+    $(`stepper-state-${n}`).textContent = text;
+}
+
+//Pill over the photo: how wide the cube sits in the frame, from the hexagon
+//the seven points describe. Between a third and nine tenths of the width
+//reads well; smaller and the stickers are only a few pixels each.
+function updatePhotoStatus(index){
+    const photo = state.photos[index];
+    if(!photo) return;
+    const pill = $(`photo-status-${index}`);
+    const kp = normalizeRing(photo.keypoints);
+    const xs = kp.ring.map(p => p[0]), ys = kp.ring.map(p => p[1]);
+    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+    const fraction = span / Math.max(photo.image.width, photo.image.height);
+    const pct = Math.round(fraction * 100);
+    if(fraction < 0.33){
+        pill.textContent = `Cube spans ${pct}% of the frame: move closer`;
+        pill.className = "frame-pill warn";
+    }else if(fraction > 0.92){
+        pill.textContent = `Cube spans ${pct}% of the frame: step back so every corner shows`;
+        pill.className = "frame-pill warn";
+    }else{
+        pill.textContent = `Cube spans ${pct}% of the frame` + (photo.samples ? " \u00b7 27 stickers read" : "");
+        pill.className = "frame-pill good";
+    }
+}
+
+//---- reconstruction and the net --------------------------------------------
+
+function rebuildFromPhotos(){
+    const [a, b] = state.photos;
+    if(!a || !b){
+        setMessage(a || b ? "Add the second photo to read the cube." : "Add two photos, or use the sample photos.", "info");
+        updateStepper();
+        return;
+    }
+    try{
+        a.samples = sampleFaces(a.image, a.keypoints);
+        b.samples = sampleFaces(b.image, b.keypoints);
+    }catch(err){
+        setMessage("The points of a photo overlap. Drag them onto the cube's corners.", "bad");
+        return;
+    }
+    const result = reconstruct(a.samples, b.samples);
+    a.naming = PHOTO1_FACES;
+    b.naming = result.photo2Faces;
+    state.facelets = result.facelets;
+    state.classRgb = {};
+    const classFace = [...PHOTO1_FACES, ...result.photo2Faces];
+    result.classRgb.forEach((rgb, cls) => { state.classRgb[FACE_NAMES[classFace[cls]]] = rgb; });
+    drawPhoto(0);
+    drawPhoto(1);
+    renderNet();
+    renderPalette();
+    setMessage(result.message, result.valid ? (result.swapped ? "warn" : "good") : "bad");
+    if(result.swapped){
+        highlightSwapped(result);
+    }
+    clearSolution();
+    cubeView.setPalette(currentPalette());
+    cubeView.setFacelets(state.facelets);
+    updateStepper();
+}
+
+function highlightSwapped(result){
+    const [i, j] = result.swapped;
+    for(const s of [i, j]){
+        const p = Math.floor(s / 27), k = Math.floor((s % 27) / 9), q = s % 9;
+        const idx = sampleFaceletIndex(p, k, q, result.photo2Faces);
+        const cell = document.querySelector(`.net .sticker[data-index="${idx}"]`);
+        if(cell) cell.classList.add("swapped");
+    }
+}
+
+function currentPalette(){
+    const palette = {};
+    for(const f of FACE_NAMES) palette[f] = (state.classRgb && state.classRgb[f]) || STICKER_RGB[f];
+    return palette;
+}
+
+function cssColour(face){
+    const rgb = currentPalette()[face];
+    return `rgb(${rgb.map(Math.round).join(",")})`;
+}
+
+//The unfolded cube: U on top, then L F R B in a row, D below.
+const NET_LAYOUT = {U: [1, 0], L: [0, 1], F: [1, 1], R: [2, 1], B: [3, 1], D: [1, 2]};
+
+function renderNet(){
+    const net = $("net");
+    net.innerHTML = "";
+    const facelets = state.facelets || Facelets.SOLVED;
+    for(const face of FACE_NAMES){
+        const [gx, gy] = NET_LAYOUT[face];
+        const faceEl = document.createElement("div");
+        faceEl.className = "net-face";
+        faceEl.style.gridColumn = String(gx + 1);
+        faceEl.style.gridRow = String(gy + 1);
+        const f = FACE_NAMES.indexOf(face);
+        for(let i = 0; i < 9; i++){
+            const idx = f * 9 + i;
+            const cell = document.createElement("button");
+            cell.type = "button";
+            cell.className = "sticker" + (i === 4 ? " centre" : "");
+            cell.dataset.index = String(idx);
+            cell.style.background = cssColour(facelets[idx]);
+            cell.title = i === 4 ? `${face} centre` : `${face}${i + 1}: ${facelets[idx]}`;
+            cell.setAttribute("aria-label", cell.title);
+            if(i === 4){
+                cell.textContent = face;
+                cell.disabled = true;
+            }else{
+                cell.addEventListener("click", () => paintSticker(idx));
+            }
+            faceEl.appendChild(cell);
+        }
+        net.appendChild(faceEl);
+    }
+}
+
+function renderPalette(){
+    const pal = $("palette");
+    pal.innerHTML = "";
+    FACE_NAMES.split("").forEach((face, i) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "swatch" + (i === state.selectedColour ? " selected" : "");
+        b.style.background = cssColour(face);
+        b.textContent = face;
+        b.title = `Paint stickers with the ${face} colour`;
+        b.addEventListener("click", () => { state.selectedColour = i; renderPalette(); });
+        pal.appendChild(b);
+    });
+}
+
+function paintSticker(idx){
+    if(!state.facelets) state.facelets = Facelets.SOLVED;
+    const f = state.facelets.split("");
+    f[idx] = FACE_NAMES[state.selectedColour];
+    state.facelets = f.join("");
+    renderNet();
+    const problem = CubieCube.fromFacelets(state.facelets).verify();
+    setMessage(problem === "" ? "Valid cube." : "Not a valid cube yet: " + problem + ".", problem === "" ? "good" : "bad");
+    clearSolution();
+    cubeView.setFacelets(state.facelets);
+    updateStepper();
+}
+
+function setMessage(text, kind){
+    const el = $("net-message");
+    el.textContent = text;
+    el.className = "message " + kind;
+}
+
+//---- solving and playback --------------------------------------------------
+
+const cubeView = new CubeView($("cube-canvas"));
+const player = {index: 0, playing: false, speed: 1};
+
+function clearSolution(){
+    state.solution = null;
+    state.solveStart = null;
+    player.index = 0;
+    player.playing = false;
+    $("solution").hidden = true;
+    $("solve-button").disabled = false;
+}
+
+async function solve(){
+    if(!state.facelets) return;
+    const problem = CubieCube.fromFacelets(state.facelets).verify();
+    if(problem !== ""){
+        setMessage("Not a valid cube yet: " + problem + ". Fix the stickers first.", "bad");
+        return;
+    }
+    if(CubieCube.fromFacelets(state.facelets).isSolved()){
+        setMessage("This cube is already solved.", "good");
+        return;
+    }
+    $("solve-button").disabled = true;
+    $("solver-status").textContent = solverLink.isReady() ? "Searching..." : "Building tables, then searching...";
+    const t = Date.now();
+    try{
+        //Stop at 19 moves or after 1.5 seconds of improving, whichever first.
+        const result = await solverLink.solve(state.facelets, 24, 19, 1500);
+        const moves = Moves.parseSequence(result.moves);
+        state.solution = moves;
+        state.solveStart = state.facelets;
+        player.index = 0;
+        $("solver-status").textContent = `Found ${moves.length} moves in ${((Date.now() - t) / 1000).toFixed(2)} s.`;
+        showSolution();
+    }catch(err){
+        $("solver-status").textContent = "The solver failed: " + err.message;
+        $("solve-button").disabled = false;
+    }
+}
+
+function showSolution(){
+    $("solution").hidden = false;
+    updateStepper();
+    $("move-count").textContent = String(state.solution.length);
+    renderMoveStrip();
+    cubeView.setFacelets(state.solveStart);
+    $("solution").scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+function renderMoveStrip(){
+    const strip = $("moves");
+    strip.innerHTML = "";
+    state.solution.forEach((m, i) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "move" + (i < player.index ? " done" : "") + (i === player.index ? " next" : "");
+        chip.textContent = Moves.name(m);
+        chip.title = `Jump to before move ${i + 1}`;
+        chip.addEventListener("click", () => jumpTo(i));
+        strip.appendChild(chip);
+    });
+    const n = state.solution.length;
+    const segments = $("segments");
+    segments.innerHTML = "";
+    for(let i = 0; i < n; i++){
+        const s = document.createElement("i");
+        if(i < player.index) s.className = "done";
+        else if(i === player.index) s.className = "current";
+        segments.appendChild(s);
+    }
+    $("move-index").textContent = String(Math.min(player.index + 1, n));
+    $("progress").textContent = player.index >= n ? "all done" : `${player.index} done`;
+    if(player.index < n){
+        const m = state.solution[player.index];
+        $("current-move").textContent = Moves.name(m);
+        $("current-move-desc").textContent = describeMove(m);
+    }else{
+        $("current-move").textContent = "Solved";
+        $("current-move-desc").textContent = "Every move has been played. Start over to watch it again.";
+    }
+    $("play-button").textContent = player.playing ? "Pause" : "Auto-play";
+    $("step-forward").disabled = player.index >= n;
+    $("step-back").disabled = player.index <= 0;
+}
+
+//"R'" -> "Right face, anticlockwise". Directions are as seen looking at that face.
+const FACE_WORDS = {U: "Top face", R: "Right face", F: "Front face", D: "Bottom face", L: "Left face", B: "Back face"};
+function describeMove(move){
+    const face = FACE_NAMES[Math.floor(move / 3)];
+    const turn = ["clockwise, a quarter turn", "a half turn", "anticlockwise, a quarter turn"][move % 3];
+    return `${FACE_WORDS[face]} (${face}), ${turn}`;
+}
+
+function faceletsAfter(count){
+    let f = state.solveStart;
+    for(let i = 0; i < count; i++) f = Facelets.applyMove(f, state.solution[i]);
+    return f;
+}
+
+function jumpTo(i){
+    player.playing = false;
+    player.index = Math.max(0, Math.min(state.solution.length, i));
+    cubeView.turn = null;
+    cubeView.setFacelets(faceletsAfter(player.index));
+    renderMoveStrip();
+}
+
+async function stepForward(){
+    if(cubeView.turn || !state.solution || player.index >= state.solution.length) return;
+    const m = state.solution[player.index];
+    player.index++;
+    renderMoveStrip();
+    await cubeView.animateMove(m, 500 / player.speed);
+}
+
+async function stepBack(){
+    if(cubeView.turn || !state.solution || player.index <= 0) return;
+    player.index--;
+    renderMoveStrip();
+    await cubeView.animateMove(Moves.inverse(state.solution[player.index]), 500 / player.speed);
+}
+
+async function play(){
+    if(!state.solution) return;
+    if(player.playing){ player.playing = false; renderMoveStrip(); return; }
+    if(player.index >= state.solution.length) jumpTo(0);
+    player.playing = true;
+    renderMoveStrip();
+    //state.solution becomes null if a new cube is loaded mid-playback.
+    while(player.playing && state.solution && player.index < state.solution.length){
+        await stepForward();
+        if(state.solution && player.index < state.solution.length) await new Promise(r => setTimeout(r, 120 / player.speed));
+    }
+    player.playing = false;
+    if(state.solution) renderMoveStrip();
+}
+
+//---- wiring ----------------------------------------------------------------
+
+function init(){
+    for(const i of [0, 1]){
+        $(`photo-hint-${i}`).textContent = PHOTO_HINTS[i];
+        installDragging(i);
+        for(const id of [`photo-file-${i}`, `photo-camera-${i}`]){
+            $(id).addEventListener("change", e => {
+                const file = e.target.files && e.target.files[0];
+                if(file) loadPhotoFile(i, file);
+                e.target.value = "";
+            });
+        }
+        $(`photo-reset-${i}`).addEventListener("click", () => {
+            const photo = state.photos[i];
+            if(!photo) return;
+            photo.keypoints = autoDetectKeypoints(photo.image);
+            drawPhoto(i);
+            rebuildFromPhotos();
+        });
+        $(`photo-default-${i}`).addEventListener("click", () => {
+            const photo = state.photos[i];
+            if(!photo) return;
+            photo.keypoints = defaultKeypoints(photo.image.width, photo.image.height);
+            drawPhoto(i);
+            rebuildFromPhotos();
+        });
+    }
+    $("sample-button").addEventListener("click", () => useSamplePhotos((Date.now() % 100000) + 1));
+    $("reread-button").addEventListener("click", rebuildFromPhotos);
+    $("solve-button").addEventListener("click", solve);
+    $("play-button").addEventListener("click", play);
+    $("step-back").addEventListener("click", stepBack);
+    $("step-forward").addEventListener("click", stepForward);
+    $("reset-button").addEventListener("click", () => jumpTo(0));
+    $("speed").addEventListener("input", e => { player.speed = Number(e.target.value); $("speed-label").textContent = `${player.speed.toFixed(1)}x`; });
+    renderNet();
+    renderPalette();
+    solverLink.start();
+    //Open with a worked example so the page shows what it does.
+    useSamplePhotos(20261001);
+    document.addEventListener("solver-ready", () => {
+        if(!state.solution && state.photos[0] && state.photos[0].sample) solve();
+    }, {once: true});
+}
+
+init();
+
+return {};
+})();
+
+</script>
+</body>
+</html>

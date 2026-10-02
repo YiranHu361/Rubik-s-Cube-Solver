@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Two Corner Cube Solver</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/*Layout: a workbench ledger. A sticky stepper tracks the three steps; each
+  step is a row with its number and name in a narrow left column and the
+  working area on the right; one column on phones.*/
+:root{
+    --bg:#ECEEF2; --surface:#FFFFFF; --ink:#15191F; --muted:#5B6470; --line:#CBD1DA;
+    --accent:#D8156F; --accent-ink:#FFFFFF; --good:#157A4C; --warn:#B86E00; --bad:#C62828;
+    --plate:#15191F;
+    --display:"Syne", "Arial Black", sans-serif;
+    --body:"IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono:"IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+        --bg:#121519; --surface:#1B2027; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2E353E;
+        --accent:#FF4FA3; --accent-ink:#15191F; --good:#4CC38A; --warn:#F2B04A; --bad:#FF6B6B;
+        --plate:#0B0D10; color-scheme:dark;
+    }
+}
+:root[data-theme="dark"]{
+    --bg:#121519; --surface:#1B2027; --ink:#ECEFF3; --muted:#9AA3AF; --line:#2E353E;
+    --accent:#FF4FA3; --accent-ink:#15191F; --good:#4CC38A; --warn:#F2B04A; --bad:#FF6B6B;
+    --plate:#0B0D10; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+    background:var(--bg); color:var(--ink); font-family:var(--body); font-size:16px; line-height:1.5;
+    padding-block:0 48px; padding-inline:16px;
+}
+.wrap{max-width:1120px; margin:0 auto}
+header.hero{padding-block:36px 24px; display:grid; gap:12px}
+h1{
+    font-family:var(--display); font-weight:800; font-size:clamp(2.6rem, 8vw, 5.4rem); line-height:0.95;
+    letter-spacing:-0.02em; margin:0; text-wrap:balance;
+}
+h1 em{font-style:normal; color:var(--accent)}
+.lede{max-width:62ch; margin:0; color:var(--muted); font-size:1.05rem}
+.lede strong{color:var(--ink); font-weight:600}
+.toolbar{display:flex; flex-wrap:wrap; gap:10px; align-items:center}
+button, .filebutton{
+    font:inherit; font-weight:600; font-size:0.95rem; border:1.5px solid var(--ink); background:var(--surface); color:var(--ink);
+    padding:9px 16px; border-radius:999px; cursor:pointer; line-height:1.2;
+}
+button:hover, .filebutton:hover{border-color:var(--accent); color:var(--accent)}
+button:focus-visible, .filebutton:focus-within, .sticker:focus-visible, .swatch:focus-visible, .stepper a:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+button.primary, .filebutton.primary{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+button.primary:hover, .filebutton.primary:hover{filter:brightness(1.08); color:var(--accent-ink)}
+button:disabled{opacity:0.45; cursor:default}
+button.linkish{border:0; background:none; padding:4px 2px; font-weight:500; color:var(--muted); text-decoration:underline; text-underline-offset:3px; border-radius:4px}
+button.linkish:hover{color:var(--accent)}
+.filebutton input{position:absolute; width:1px; height:1px; opacity:0; overflow:hidden}
+.filebutton{position:relative; display:inline-block}
+
+/*Progress stepper: which step is done, which is in progress, with a one-line state each.*/
+.stepper{position:sticky; top:env(safe-area-inset-top, 0px); z-index:5; background:var(--bg); display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:10px; padding-block:12px 10px; border-bottom:1.5px solid var(--line)}
+.stepper a{text-decoration:none; color:var(--muted); display:grid; gap:5px; min-width:0}
+.stepper .bar{height:4px; background:var(--line); border-radius:2px}
+.stepper .done .bar{background:var(--good)}
+.stepper .current .bar{background:var(--accent)}
+.stepper .name{font-family:var(--mono); font-size:0.72rem; letter-spacing:0.06em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.stepper .done .name::before{content:"\2713  "; color:var(--good)}
+.stepper .state{font-size:0.86rem; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.stepper .current .state{font-weight:600}
+
+.step{
+    display:grid; grid-template-columns:200px minmax(0,1fr); gap:24px; padding-block:32px; border-top:1.5px solid var(--line);
+}
+.step:first-of-type{border-top:0}
+.step-head{position:sticky; top:calc(env(safe-area-inset-top, 0px) + 70px); align-self:start; padding-top:4px}
+.step-num{font-family:var(--mono); color:var(--accent); font-size:0.85rem; letter-spacing:0.08em}
+.step h2{font-family:var(--display); font-weight:700; font-size:1.7rem; line-height:1.05; margin:4px 0 8px; letter-spacing:-0.01em; text-wrap:balance}
+.step-head p{margin:0; color:var(--muted); font-size:0.92rem}
+.step-body{min-width:0; display:grid; gap:18px; align-content:start}
+
+.photos{display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:18px}
+.photo-card{background:var(--surface); border:1.5px solid var(--line); padding:14px; display:grid; gap:10px; min-width:0}
+.photo-card header{padding:0; gap:4px; display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap}
+.photo-card h3{margin:0; font-family:var(--mono); font-weight:600; font-size:0.95rem}
+.badge{font-family:var(--mono); font-size:0.75rem; color:var(--muted); letter-spacing:0.04em; text-transform:uppercase}
+.photo-frame{position:relative; background:var(--plate); aspect-ratio:1; max-width:100%; overflow:hidden; border-radius:6px}
+.photo-frame canvas{display:block; width:100%; height:100%; object-fit:contain; touch-action:none; cursor:grab}
+.photo-card:not(.has-photo) canvas{display:none}
+/*Capture guide shown before a photo exists: corner brackets, a ghost of the
+  cube silhouette with its seven points, and an instruction pill.*/
+.guide{position:absolute; inset:0; display:grid; place-items:center; color:#C9CFD8; text-align:center; padding:28px; font-size:0.9rem}
+.photo-card.has-photo .guide{display:none}
+.guide svg{width:min(60%, 180px); height:auto; margin-bottom:10px}
+.brackets{position:absolute; inset:14px; pointer-events:none}
+.brackets i{position:absolute; width:22px; height:22px; border:2.5px solid #fff; opacity:0.85}
+.brackets i:nth-child(1){left:0; top:0; border-right:0; border-bottom:0}
+.brackets i:nth-child(2){right:0; top:0; border-left:0; border-bottom:0}
+.brackets i:nth-child(3){left:0; bottom:0; border-right:0; border-top:0}
+.brackets i:nth-child(4){right:0; bottom:0; border-left:0; border-top:0}
+.photo-card.has-photo .brackets{display:none}
+.frame-pill{position:absolute; left:50%; top:12px; transform:translateX(-50%); background:rgba(0,0,0,0.72); color:#fff; font-size:0.82rem; font-weight:500; padding:6px 12px; border-radius:999px; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; pointer-events:none}
+.frame-pill.good{background:rgba(21,122,76,0.92)}
+.frame-pill.warn{background:rgba(184,110,0,0.94)}
+.frame-pill[hidden]{display:none}
+.tip{display:flex; gap:10px; align-items:flex-start; background:var(--bg); border:1.5px solid var(--line); padding:9px 12px; font-size:0.86rem; color:var(--muted); border-radius:6px; margin:0}
+.tip b{color:var(--ink); font-weight:600}
+.tip svg{flex:none; width:18px; height:18px; margin-top:2px}
+.photo-actions{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.photo-actions button, .photo-actions .filebutton{padding:8px 14px; font-size:0.9rem}
+.photo-more{display:flex; flex-wrap:wrap; gap:14px}
+.legend{display:flex; gap:14px; flex-wrap:wrap; font-size:0.82rem; color:var(--muted); font-family:var(--mono)}
+.legend i{display:inline-block; width:10px; height:10px; border-radius:50%; border:1.5px solid #000; vertical-align:-1px; margin-right:5px}
+
+.net-wrap{display:grid; grid-template-columns:minmax(0, 1fr); gap:18px}
+@media (min-width:860px){.net-wrap{grid-template-columns:minmax(0, 440px) minmax(0,1fr); align-items:start}}
+.net{display:grid; grid-template-columns:repeat(4, 1fr); grid-template-rows:repeat(3, 1fr); gap:6px; background:var(--plate); padding:8px; width:440px; max-width:100%; aspect-ratio:4/3; border-radius:6px}
+.net-face{display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:3px}
+.sticker{padding:0; border:0; border-radius:3px; min-width:0; font-family:var(--mono); font-weight:600; font-size:0.9rem; color:rgba(0,0,0,0.75); cursor:pointer}
+.sticker:hover{outline:2px solid #fff}
+.sticker.centre{cursor:default; color:#fff; text-shadow:0 0 3px rgba(0,0,0,0.9), 0 0 1px #000}
+.sticker.swapped{outline:3px dashed var(--accent); outline-offset:-3px}
+.net-side{display:grid; gap:12px; align-content:start}
+.palette{display:flex; gap:8px; flex-wrap:wrap}
+.swatch{width:44px; height:44px; padding:0; border-radius:8px; border:2px solid transparent; font-family:var(--mono); font-weight:600; color:rgba(0,0,0,0.7)}
+.swatch.selected{border-color:var(--ink); box-shadow:0 0 0 3px var(--surface), 0 0 0 5px var(--ink)}
+.message{margin:0; padding:10px 14px; border-left:4px solid var(--line); background:var(--surface); font-size:0.95rem}
+.message.good{border-color:var(--good)}
+.message.warn{border-color:var(--warn)}
+.message.bad{border-color:var(--bad)}
+.message.info{border-color:var(--line)}
+.small{color:var(--muted); font-size:0.88rem; margin:0}
+
+.solve-top{display:flex; flex-wrap:wrap; gap:12px; align-items:center}
+#solver-status{font-family:var(--mono); font-size:0.85rem; color:var(--muted)}
+.result{display:grid; grid-template-columns:minmax(0,1fr); gap:18px}
+@media (min-width:860px){.result{grid-template-columns:minmax(0,1fr) 320px}}
+.cube-stage{background:var(--plate); border-radius:6px; aspect-ratio:1; max-width:100%; width:min(100%, 440px); position:relative}
+.cube-stage canvas{display:block; width:100%; height:100%; touch-action:none; cursor:grab}
+.cube-stage .corner-note{position:absolute; left:10px; bottom:8px; font-family:var(--mono); font-size:0.72rem; color:#9AA3AF}
+/*The player reads like a cooking-mode screen: which move you are on, one big
+  move at a time, previous and next as the main controls.*/
+.player{display:grid; gap:12px; align-content:start; background:var(--surface); border:1.5px solid var(--line); padding:16px}
+.player-top{display:flex; justify-content:space-between; align-items:baseline; font-family:var(--mono); font-size:0.85rem; color:var(--muted); font-variant-numeric:tabular-nums}
+.player-top b{color:var(--ink); font-weight:600}
+.segments{display:flex; gap:3px}
+.segments i{flex:1; height:6px; background:var(--line); border-radius:3px}
+.segments i.done{background:var(--accent)}
+.segments i.current{background:var(--ink)}
+.now{display:grid; gap:2px; padding-block:6px}
+.now-move{font-family:var(--display); font-weight:800; font-size:4.6rem; line-height:1; letter-spacing:-0.02em}
+.now-desc{color:var(--muted); font-size:0.95rem}
+.controls{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+.controls button{padding:8px 14px; font-size:0.9rem}
+.speed{display:flex; align-items:center; gap:8px; font-size:0.85rem; color:var(--muted); font-family:var(--mono)}
+.speed input{width:110px; accent-color:var(--accent)}
+details.all-moves summary{cursor:pointer; font-size:0.9rem; color:var(--muted); font-weight:500}
+.moves{display:flex; flex-wrap:wrap; gap:6px; padding-top:10px}
+.move{font-family:var(--mono); font-weight:600; padding:5px 9px; border-radius:6px; border:1.5px solid var(--line); background:var(--bg); min-width:40px; font-size:0.9rem}
+.move.done{opacity:0.4}
+.move.next{border-color:var(--accent); color:var(--accent)}
+
+footer{border-top:1.5px solid var(--line); padding-top:20px; color:var(--muted); font-size:0.88rem; max-width:70ch}
+footer a{color:var(--accent)}
+@media (max-width:760px){
+    .step{grid-template-columns:1fr; gap:12px}
+    .step-head{position:static}
+    .stepper .state{font-size:0.8rem}
+    .now-move{font-size:3.6rem}
+}
+@media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+    <h1>Two photos.<br>One <em>corner</em> each.</h1>
+    <p class="lede">Photograph a scrambled cube from one corner, then from the opposite corner. That covers all six faces. The page reads the 54 stickers, checks they make a real cube, and finds a solution of about 20 turns with a two-phase search running in your browser. <strong>Nothing is uploaded.</strong></p>
+    <div class="toolbar">
+        <button type="button" id="sample-button" class="primary">New sample scramble</button>
+        <span class="small">Sample photos are synthetic renders, marked as such. Replace them with your own.</span>
+    </div>
+</header>
+
+<nav class="stepper" aria-label="Progress">
+    <a href="#step-photos" id="stepper-1" class="current"><span class="bar"></span><span class="name">1 Photos</span><span class="state" id="stepper-state-1">0 of 2</span></a>
+    <a href="#step-stickers" id="stepper-2"><span class="bar"></span><span class="name">2 Stickers</span><span class="state" id="stepper-state-2">Waiting for photos</span></a>
+    <a href="#step-solve" id="stepper-3"><span class="bar"></span><span class="name">3 Solution</span><span class="state" id="stepper-state-3">Not yet</span></a>
+</nav>
+
+<section class="step" id="step-photos">
+    <div class="step-head">
+        <div class="step-num">STEP 1 OF 3</div>
+        <h2>Photograph both corners</h2>
+        <p>Drag the seven points onto the cube's corners if the guess is off: the ring goes on the corner nearest the camera, the dots on the six outer corners.</p>
+    </div>
+    <div class="step-body">
+        <div class="photos">
+            <div class="photo-card" id="photo-card-0">
+                <header><h3>Photo 1 · top corner</h3><span class="badge" id="photo-badge-0">empty</span></header>
+                <div class="photo-frame">
+                    <canvas id="photo-canvas-0" width="420" height="420" aria-label="Photo 1 with draggable corner points"></canvas>
+                    <div class="brackets"><i></i><i></i><i></i><i></i></div>
+                    <div class="guide"><div>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <div>Top face plus the two faces below it, filling about two thirds of the frame</div>
+                    </div></div>
+                    <div class="frame-pill" id="photo-status-0">Point one corner at the camera</div>
+                </div>
+                <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.6 1 1.2 1 2V16h6v-.5c0-.8.3-1.4 1-2A6 6 0 0 0 12 3z"/></svg><span><b>Even light, no glare.</b> Daylight from the side works best; a lamp straight above washes out the top face.</span></p>
+                <p class="photo-hint" id="photo-hint-0" hidden></p>
+                <div class="photo-actions">
+                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-0" accept="image/*" capture="environment"></label>
+                    <label class="filebutton">Choose from library<input type="file" id="photo-file-0" accept="image/*"></label>
+                </div>
+                <div class="photo-more">
+                    <button type="button" class="linkish" id="photo-reset-0">Guess the points again</button>
+                    <button type="button" class="linkish" id="photo-default-0">Centre the points</button>
+                </div>
+            </div>
+            <div class="photo-card" id="photo-card-1">
+                <header><h3>Photo 2 · opposite corner</h3><span class="badge" id="photo-badge-1">empty</span></header>
+                <div class="photo-frame">
+                    <canvas id="photo-canvas-1" width="420" height="420" aria-label="Photo 2 with draggable corner points"></canvas>
+                    <div class="brackets"><i></i><i></i><i></i><i></i></div>
+                    <div class="guide"><div>
+                        <svg viewBox="0 0 120 120" aria-hidden="true"><g fill="none" stroke="#C9CFD8" stroke-width="2" stroke-dasharray="4 3"><path d="M60 22 L98 42 L98 86 L60 106 L22 86 L22 42 Z"/><path d="M60 22 L60 64 M98 42 L60 64 M22 42 L60 64 M60 106 L60 64"/></g><circle cx="60" cy="64" r="5" fill="#fff"/><g fill="#ff3d8f"><circle cx="60" cy="22" r="4"/><circle cx="98" cy="86" r="4"/><circle cx="22" cy="86" r="4"/></g><g fill="#ffd23f"><circle cx="98" cy="42" r="4"/><circle cx="22" cy="42" r="4"/><circle cx="60" cy="106" r="4"/></g></svg>
+                        <div>The three faces you could not see in photo 1. Any way round is fine.</div>
+                    </div></div>
+                    <div class="frame-pill" id="photo-status-1">Flip to the diagonally opposite corner</div>
+                </div>
+                <p class="tip"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16v16H4z M4 12h16 M12 4v16"/></svg><span><b>Keep the whole cube in frame.</b> All six outer corners must be visible; the near corner should sit near the middle.</span></p>
+                <p class="photo-hint" id="photo-hint-1" hidden></p>
+                <div class="photo-actions">
+                    <label class="filebutton primary">Take photo<input type="file" id="photo-camera-1" accept="image/*" capture="environment"></label>
+                    <label class="filebutton">Choose from library<input type="file" id="photo-file-1" accept="image/*"></label>
+                </div>
+                <div class="photo-more">
+                    <button type="button" class="linkish" id="photo-reset-1">Guess the points again</button>
+                    <button type="button" class="linkish" id="photo-default-1">Centre the points</button>
+                </div>
+            </div>
+        </div>
+        <div class="legend"><span><i style="background:#fff"></i>near corner</span><span><i style="background:#ff3d8f"></i>corner joined to it by an edge</span><span><i style="background:#ffd23f"></i>far corner of a face</span><span>discs show the colour read from each sticker</span></div>
+    </div>
+</section>
+
+<section class="step" id="step-stickers">
+    <div class="step-head">
+        <div class="step-num">STEP 2 OF 3</div>
+        <h2>Check the stickers</h2>
+        <p>The top face of photo 1 is called U; its other two faces are R and F. Pick a colour, then click any sticker the camera got wrong.</p>
+    </div>
+    <div class="step-body">
+        <div class="net-wrap">
+            <div class="net" id="net" aria-label="Unfolded cube"></div>
+            <div class="net-side">
+                <p class="message info" id="net-message">Add two photos, or use the sample photos.</p>
+                <div class="palette" id="palette"></div>
+                <p class="small">Every colour must appear exactly nine times, each corner and edge piece exactly once, and the twists and flips must add up. The message above says which rule fails.</p>
+                <div><button type="button" id="reread-button">Read the photos again</button></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="step" id="step-solve">
+    <div class="step-head">
+        <div class="step-num">STEP 3 OF 3</div>
+        <h2>Solve and follow along</h2>
+        <p>Hold the cube as in photo 1: U on top, F at the front left, R at the front right. Letters are faces, an apostrophe means anticlockwise, 2 means a half turn.</p>
+    </div>
+    <div class="step-body">
+        <div class="solve-top">
+            <button type="button" id="solve-button" class="primary">Solve</button>
+            <span id="solver-status">Starting the solver...</span>
+        </div>
+        <div class="result" id="solution" hidden>
+            <div class="cube-stage">
+                <canvas id="cube-canvas" aria-label="Animated cube"></canvas>
+                <span class="corner-note">drag to look around</span>
+            </div>
+            <div class="player">
+                <div class="player-top"><span>Move <b id="move-index">1</b> of <b id="move-count">0</b></span><span id="progress">0 done</span></div>
+                <div class="segments" id="segments" aria-hidden="true"></div>
+                <div class="now"><div class="now-move" id="current-move">R</div><div class="now-desc" id="current-move-desc">Right face, clockwise</div></div>
+                <div class="controls">
+                    <button type="button" id="step-back">&larr; Previous</button>
+                    <button type="button" id="step-forward" class="primary">Next &rarr;</button>
+                    <button type="button" id="play-button">Auto-play</button>
+                    <button type="button" id="reset-button" class="linkish">Start over</button>
+                </div>
+                <label class="speed">speed <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"> <span id="speed-label">1.0x</span></label>
+                <details class="all-moves"><summary>All moves</summary><div class="moves" id="moves"></div></details>
+            </div>
+        </div>
+    </div>
+</section>
+
+<footer>
+    <p>Kociemba's two-phase algorithm, implemented in C++ and ported to JavaScript for this page. The solver tables are built in a Web Worker when the page opens. Source and benchmarks: <a href="https://github.com/YiranHu361/Rubik-s-Cube-Solver" rel="noopener">github.com/YiranHu361/Rubik-s-Cube-Solver</a>.</p>
+</footer>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
